@@ -169,7 +169,11 @@ def connect(path: str | None = None):
                 sch = config.DB_SCHEMA
                 if not re.fullmatch(r"[a-z_][a-z0-9_]*", sch):
                     raise ValueError("DB_SCHEMA must be a simple lower-case name")
-                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {sch}")
+                # a restricted login may not create schemas at all, even with IF NOT EXISTS,
+                # so only try when the schema is really missing
+                cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = %s", (sch,))
+                if cur.fetchone() is None:
+                    cur.execute(f"CREATE SCHEMA {sch}")
                 cur.execute(f"SET search_path TO {sch}")
                 for stmt in pg_schema().split(";"):
                     if stmt.strip():
