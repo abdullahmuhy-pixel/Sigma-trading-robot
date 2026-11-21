@@ -159,7 +159,8 @@ def find_trades(timeframe: str = "H1", symbols: list[str] | None = None, max_tra
     if not g:
         return p
     cands = []
-    for s in symbols or config.WATCHLIST:
+    from . import watchlist
+    for s in symbols or watchlist.get()["symbols"]:
         try:
             r = engine.analyze(s, timeframe, source="chat", journal=False)
             if not r.get("market_closed"):

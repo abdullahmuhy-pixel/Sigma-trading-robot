@@ -19,8 +19,9 @@ def _err(msg: str) -> None:
 
 
 def scan(tf: str, symbols: list[str] | None = None) -> list[dict]:
+    from . import watchlist
     out = []
-    for s in symbols or config.WATCHLIST:
+    for s in symbols or watchlist.get()["symbols"]:
         state["scanning"] = f"{s} {tf}"
         try:
             r = engine.analyze(s, tf, source="live")
@@ -36,10 +37,20 @@ def scan(tf: str, symbols: list[str] | None = None) -> list[dict]:
 
 
 def _scanner() -> None:
+    from . import watchlist
     done: dict[str, int] = {}
     while state["running"]:
         now = time.time()
-        for tf in config.SCAN_TIMEFRAMES:
+        try:
+            w = watchlist.get()
+        except Exception as e:
+            _err(f"watchlist: {e}")
+            time.sleep(30)
+            continue
+        if not w["enabled"]:          # background scanning switched off by you
+            time.sleep(30)
+            continue
+        for tf in w["timeframes"]:
             secs = tf_seconds(tf)
             bar = int(now // secs)
             # wait 20 s after the close so providers have the final candle

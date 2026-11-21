@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from . import agent, backtest, config, db, engine, learning, paper, scheduler
+from . import agent, backtest, config, db, engine, learning, paper, scheduler, watchlist
 from .data import market, news
 from .symbols import resolve
 
@@ -189,9 +189,9 @@ def symbols(q: str = "", market: str = ""):
     if not items:  # Deriv unreachable: fall back to the built-in list
         from .symbols import SYNTHETICS
         items = [{"symbol": s, "name": resolve(s).display, "market_label": "Watchlist", "open": True}
-                 for s in config.WATCHLIST] + \
+                 for s in watchlist.get()["symbols"]] + \
                 [{"symbol": k, "name": v, "market_label": "Synthetic indices", "open": True}
-                 for k, v in SYNTHETICS.items() if k not in config.WATCHLIST]
+                 for k, v in SYNTHETICS.items() if k not in watchlist.get()["symbols"]]
     return items
 
 
@@ -436,6 +436,37 @@ def push_test():
         raise HTTPException(500, f"push failed: {e}")
 
 
+@app.get("/api/watchlist")
+def get_watchlist():
+    return watchlist.get()
+
+
+class WatchlistIn(BaseModel):
+    symbols: list[str] | None = None
+    add: list[str] | None = None
+    remove: list[str] | None = None
+    timeframes: list[str] | None = None
+    enabled: bool | None = None
+
+
+@app.post("/api/watchlist")
+def edit_watchlist(body: WatchlistIn):
+    try:
+        if body.symbols is not None:
+            watchlist.set_symbols(body.symbols)
+        if body.add:
+            watchlist.add(body.add)
+        if body.remove:
+            watchlist.remove(body.remove)
+        if body.timeframes is not None:
+            watchlist.set_timeframes(body.timeframes)
+        if body.enabled is not None:
+            watchlist.set_enabled(body.enabled)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return watchlist.get()
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()
@@ -444,8 +475,7 @@ def calendar():
 @app.get("/api/status")
 def status():
     return {"time": time.time(), "tz": config.DISPLAY_TZ, "database": db.backend(), "database_mb": db.size_mb(),
-            "login_enabled": bool(config.APP_PASSWORD), "watchlist": config.WATCHLIST,
-            "scan_timeframes": config.SCAN_TIMEFRAMES, "scheduler": scheduler.state,
+            "login_enabled": bool(config.APP_PASSWORD), "watchlist": watchlist.get(), "scheduler": scheduler.state,
             "open_trades": len(paper.open_positions()),
             "keys": {"anthropic": bool(config.ANTHROPIC_API_KEY), "twelvedata": bool(config.TWELVEDATA_API_KEY),
                      "fred": bool(config.FRED_API_KEY), "finnhub": bool(config.FINNHUB_API_KEY),

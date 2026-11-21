@@ -444,3 +444,31 @@ def test_web_push(offline, monkeypatch):
     res = engine.analyze("EURUSD", "H1", source="live", journal=False)
     alerts.session_opportunity("London", res)
     assert sent and sent[0][0].startswith("⏰ London open:") and "Entry" in sent[0][1]
+
+
+def test_background_watchlist(offline, monkeypatch):
+    from sigma import scheduler, watchlist
+    w = watchlist.get()
+    assert w["symbols"] == watchlist.DEFAULT["symbols"] and w["enabled"]
+    w = watchlist.set_symbols(["frxEURUSD", "eur/usd", "cryBTCUSD", "R_75"])        # codes and spellings normalised, no duplicates
+    assert w["symbols"] == ["EURUSD", "BTCUSD", "R_75"]
+    w = watchlist.add(["XAUUSD", "EURUSD"])
+    assert w["symbols"] == ["EURUSD", "BTCUSD", "R_75", "XAUUSD"]
+    w = watchlist.remove(["frxEURUSD"])
+    assert w["symbols"] == ["BTCUSD", "R_75", "XAUUSD"]
+    w = watchlist.set_timeframes(["h1", "M15", "bogus"])
+    assert w["timeframes"] == ["M15", "H1"]
+    assert w["scans_per_day"] == 3 * (96 + 24)                                       # 360 quick analyses a day
+    with pytest.raises(ValueError):
+        watchlist.set_timeframes([])
+    with pytest.raises(ValueError):
+        watchlist.set_symbols([f"R_{n}" for n in (10, 25, 50, 75, 100)] * 1 + [f"EUR{c}" for c in
+                              ("USD", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "ZAR", "SEK", "NOK")] +
+                              [f"USD{c}" for c in ("JPY", "CHF", "CAD", "ZAR", "SEK", "NOK", "MXN", "SGD", "TRY", "PLN",
+                               "HKD")] + ["GBPJPY", "AUDJPY", "NZDJPY", "XAUUSD", "XAGUSD"])
+    # the background scan uses exactly the watchlist
+    seen = []
+    monkeypatch.setattr(engine, "analyze", lambda s, tf, source="live": seen.append(s) or {"is_signal": False})
+    scheduler.scan("H1")
+    assert seen == ["BTCUSD", "R_75", "XAUUSD"]
+    assert watchlist.set_enabled(False)["enabled"] is False

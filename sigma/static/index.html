@@ -89,6 +89,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 .wbar .fill{position:absolute;top:0;height:10px;border-radius:5px}
 .form{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
 .warn{color:#f5b83d}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:5px 6px 5px 11px;font:13px var(--mono)}
+.chip b{cursor:pointer;color:var(--dim);font-weight:600;padding:0 5px;border-radius:50%}.chip b:hover{color:var(--down)}
+.tfb{font:600 12px var(--mono);padding:6px 10px;background:transparent;color:var(--dim);border:1px solid var(--line)}
+.tfb.on{background:var(--accent);color:#111;border-color:var(--accent)}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 #picker{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;align-items:flex-start;justify-content:center;padding-top:max(40px,env(safe-area-inset-top))}
 #picker.on{display:flex}
 #pbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(560px,94vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
@@ -180,11 +186,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 
   <section class="page" id="page-markets"><div class="wrap">
     <div class="tabs">
-      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="sessions">Sessions</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
+      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="watch">Watchlist</div><div class="tab" data-s="sessions">Sessions</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
       <div class="tab" data-s="perf">Robot performance</div><div class="tab" data-s="learn">Learning</div>
       <div class="tab" data-s="bt">Backtest</div><div class="tab" data-s="cal">Calendar</div>
     </div>
     <div class="sub on" id="s-opps"></div>
+    <div class="sub" id="s-watch"></div>
     <div class="sub" id="s-sessions"></div>
     <div class="sub" id="s-journal"></div>
     <div class="sub" id="s-signals"></div>
@@ -337,9 +344,12 @@ function renderPicker(){const q=norm($('#psearch').value);
     html+=`<div class="it${k===0?' sel':''}" data-k="${k}"><span><span class="dot${i.open?'':' off'}"></span>${esc(i.name)}</span><span class="code">${esc(i.symbol)}</span></div>`});
   $('#plist').innerHTML=html||'<p class="muted" style="padding:12px">No match. You can still ask the chat about it.</p>';
   $('#plist').querySelectorAll('.it').forEach(el=>el.onclick=()=>pick(+el.dataset.k))}
-function pick(k){const i=pShown[k];if(!i)return;$('#picker').classList.remove('on');setSymbol(i.symbol)}
-$('#symbtn').onclick=()=>{$('#picker').classList.add('on');$('#psearch').value='';renderPicker();setTimeout(()=>$('#psearch').focus(),50)};
-$('#picker').onclick=e=>{if(e.target.id==='picker')$('#picker').classList.remove('on')};
+let pickTarget=null;   // null = load on the chart; a function = add to a list
+function pick(k){const i=pShown[k];if(!i)return;$('#picker').classList.remove('on');
+  if(pickTarget){const f=pickTarget;pickTarget=null;f(i.symbol,i.name)}else setSymbol(i.symbol)}
+function openPicker(target){pickTarget=target||null;$('#picker').classList.add('on');$('#psearch').value='';renderPicker();setTimeout(()=>$('#psearch').focus(),50)}
+$('#symbtn').onclick=()=>openPicker(null);
+$('#picker').onclick=e=>{if(e.target.id==='picker'){pickTarget=null;$('#picker').classList.remove('on')}};
 $('#psearch').oninput=renderPicker;
 $('#psearch').onkeydown=e=>{const its=$('#plist').querySelectorAll('.it');if(e.key==='Escape')$('#picker').classList.remove('on');
   else if(e.key==='Enter'){e.preventDefault();pick(pSel)}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();its[pSel]?.classList.remove('sel');
@@ -393,9 +403,34 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
    :'<p class="muted">The robot scans the watchlist at every candle close and fast-scans each session open. Opportunities appear here, in the chat, and as a phone notification.</p>');
    const pt=$('#pushtest');if(pt)pt.onclick=async()=>{await ensurePush();const r=await post('/api/push/test',{});toast(r.sent?`Test sent to ${r.sent} device${r.sent>1?'s':''}`:'No device received it. Try turning notifications off and on again.')};
    const pa=$('#pushask');if(pa)pa.onclick=()=>{sessionStorage.removeItem('sigma_notif_later');askNotifications()}}
+ if(on==='watch'){const w=await api('/api/watchlist');const nameOf=c=>(SYMS.find(i=>i.symbol===c||i.symbol==='frx'+c||i.symbol==='cry'+c)||{}).name||c;
+   $('#s-watch').innerHTML=`<div class="box"><h4>Background watchlist</h4>
+     <p class="muted">These are the <b>only</b> markets the robot scans on its own, at every candle close on the timeframes below, and the only ones that send you opportunity notifications. Anything else is analysed only when you ask. Fewer markets and timeframes = fewer data calls.</p>
+     <label class="switch"><input type="checkbox" id="w_on" ${w.enabled?'checked':''}> Background scanning ${w.enabled?'<b class="long">on</b>':'<b class="short">off</b>'}</label>
+     <h4 style="margin-top:14px">Markets (${w.symbols.length})</h4>
+     <div class="chips">${w.symbols.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-wrm="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No markets: nothing will be scanned.</span>'}</div>
+     <button id="w_add">+ Add market</button>
+     <h4 style="margin-top:16px">Timeframes</h4>
+     <div class="chips">${['M5','M15','M30','H1','H4','D1'].map(t=>`<button class="tfb ${w.timeframes.includes(t)?'on':''}" data-wtf="${t}">${t}</button>`).join('')}</div>
+     <p class="muted">About <b>${w.scans_per_day.toLocaleString('en-ZA')}</b> quick analyses a day (markets × candle closes; forex markets are skipped while closed). Each costs a few price-data calls and no Claude usage. Deep checks run only on signals.</p></div>`;
+   const save=async b=>{try{await post('/api/watchlist',b);loadMarkets()}catch(e){toast(esc(e.message))}};
+   $('#w_on').onchange=e=>save({enabled:e.target.checked});
+   $('#w_add').onclick=()=>openPicker((code,name)=>{save({add:[code]});toast('Added '+esc(name))});
+   document.querySelectorAll('[data-wrm]').forEach(b=>b.onclick=()=>save({remove:[b.dataset.wrm]}));
+   document.querySelectorAll('[data-wtf]').forEach(b=>b.onclick=()=>{const cur=[...document.querySelectorAll('[data-wtf].on')].map(x=>x.dataset.wtf);
+     const nxt=b.classList.contains('on')?cur.filter(t=>t!==b.dataset.wtf):[...cur,b.dataset.wtf];if(!nxt.length){toast('Keep at least one timeframe');return}save({timeframes:nxt})})}
  if(on==='sessions'){const ss=await api('/api/sessions');
-   $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Change the pairs in the chat, e.g. "set the London session pairs to EURUSD, GBPUSD, XAUUSD".</p>
-   <div class="scroll">${table([['Session',r=>`<b>${esc(r.session)}</b>`],['Next open (SAST)',r=>esc(r.next_open_local||'–')],['Pairs',r=>esc(r.pairs.join(', '))],['Last scan',r=>r.last_scan?fmtT(r.last_scan.at)+` · ${r.last_scan.opportunities} found`:'–'],['',r=>`<button class="ghost" data-scan="${esc(r.session)}">Scan now</button>`],['On',r=>r.enabled?'✓':'off']],ss)}</div>`;
+   $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Tap ✕ to remove a pair, <b>+ Add</b> to add one, or switch a session off.</p>
+   ${ss.map(r=>`<div class="box"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+     <div><b style="font-size:16px">${esc(r.session)}</b> <span class="muted">next open ${esc(r.next_open_local||'–')} SAST${r.last_scan?' · last scan '+fmtT(r.last_scan.at)+', '+r.last_scan.opportunities+' found':''}</span></div>
+     <div style="display:flex;gap:8px;align-items:center"><label class="switch"><input type="checkbox" data-son="${esc(r.session)}" ${r.enabled?'checked':''}> on</label><button class="ghost" data-scan="${esc(r.session)}">Scan now</button></div></div>
+     <div class="chips">${r.pairs.map(c=>`<span class="chip">${esc(c)}<b data-srm="${esc(r.session)}" data-sym="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No pairs</span>'}
+     <button class="ghost" data-sadd="${esc(r.session)}">+ Add</button></div></div>`).join('')}`;
+   const sv=async b=>{try{await post('/api/sessions',b);loadMarkets()}catch(e){toast(esc(e.message))}};
+   const pairsOf=n=>ss.find(x=>x.session===n).pairs;
+   document.querySelectorAll('[data-son]').forEach(b=>b.onchange=()=>sv({session:b.dataset.son,enabled:b.checked}));
+   document.querySelectorAll('[data-srm]').forEach(b=>b.onclick=()=>sv({session:b.dataset.srm,pairs:pairsOf(b.dataset.srm).filter(p=>p!==b.dataset.sym)}));
+   document.querySelectorAll('[data-sadd]').forEach(b=>b.onclick=()=>openPicker(code=>sv({session:b.dataset.sadd,pairs:[...pairsOf(b.dataset.sadd),code.replace(/^(frx|cry)/,'')]})));
    document.querySelectorAll('[data-scan]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='scanning…';await post('/api/sessions/scan',{session:b.dataset.scan});toast('Scanning the '+esc(b.dataset.scan)+' pairs. Opportunities will appear in Opportunities and the chat.')})}
  if(on==='journal'){const j=await api('/api/journal');const A=j.accuracy,S=j.signal_accuracy,O=j.orders;
    const accRow=(name,x)=>[name,x];

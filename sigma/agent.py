@@ -54,6 +54,9 @@ How you work:
   see, then verify everything with live data through tools before giving a view.
 - Users can review their own past trades with my_trades. For "were your signals right?" use signal_journal; be
   honest about wrong calls and missed entries (direction right, entry never reached), and what was changed because of them.
+- Background scanning only covers the user's background watchlist (background_watchlist tool) - that is what costs
+  data calls and what triggers notifications. When they ask to watch, add, drop or stop watching a market, change it
+  there and tell them the new list and roughly how many scans a day it means.
 - Session opens: at each Sydney, Tokyo, London and New York open the robot fast-scans that session's pairs and
   alerts opportunities (marked "fast scan"). When the user wants to act on one, run deep_analysis on it first and
   say whether the deep check confirms or rejects the fast-scan idea.
@@ -156,6 +159,14 @@ TOOLS = [
      "right or wrong by how the market moved), order outcomes including MISSED entries (price went the right way but "
      "never reached the limit/stop), and accuracy by side, timeframe, market and order type.",
      "input_schema": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
+    {"name": "background_watchlist", "description": "The ONLY markets the robot scans on its own at every candle "
+     "close (and the only ones that trigger opportunity notifications), plus their timeframes. Show, add, remove or "
+     "replace markets, change timeframes, or switch background scanning on/off.",
+     "input_schema": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["show", "add", "remove", "set", "timeframes", "enable", "disable"]},
+         "symbols": {"type": "array", "items": {"type": "string"}, "description": "for add/remove/set: any Deriv market or alias"},
+         "timeframes": {"type": "array", "items": {"type": "string", "enum": list(TIMEFRAMES)}}},
+         "required": ["action"]}},
     {"name": "trading_sessions", "description": "Session-open scanning: show the schedule (next opens in the user's "
      "time), the pairs each session scans, run a fast scan of a session now, or change a session's pairs / switch it off.",
      "input_schema": {"type": "object", "properties": {
@@ -242,7 +253,8 @@ def run_tool(name: str, args: dict) -> object:
         return out
     if name == "scan_watchlist":
         rows = []
-        for s in args.get("symbols") or config.WATCHLIST:
+        from . import watchlist
+        for s in args.get("symbols") or watchlist.get()["symbols"]:
             try:
                 r = engine.analyze(s, args["timeframe"], source="chat")
                 rows.append({"symbol": r["display"], "direction": "LONG" if r["direction"] > 0 else "SHORT",
@@ -313,6 +325,20 @@ def run_tool(name: str, args: dict) -> object:
         return {"accuracy": journal.call_accuracy(), "signals_only": journal.call_accuracy(signals_only=True),
                 "orders": journal.order_stats(cache_seconds=0),
                 "recent": [{**r, "created_at": _local(r["created_at"])} for r in journal.recent(int(args.get("limit", 25)))]}
+    if name == "background_watchlist":
+        from . import watchlist
+        act = args["action"]
+        if act == "add":
+            watchlist.add(args.get("symbols") or [])
+        elif act == "remove":
+            watchlist.remove(args.get("symbols") or [])
+        elif act == "set":
+            watchlist.set_symbols(args.get("symbols") or [])
+        elif act == "timeframes":
+            watchlist.set_timeframes(args.get("timeframes") or [])
+        elif act in ("enable", "disable"):
+            watchlist.set_enabled(act == "enable")
+        return watchlist.get()
     if name == "trading_sessions":
         from . import sessions
         act, ses = args["action"], args.get("session")
