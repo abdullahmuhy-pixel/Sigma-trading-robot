@@ -42,21 +42,23 @@ def update_settings(start_balance: float | None = None, currency: str | None = N
         if not 0.05 <= risk_pct <= 5:
             raise ValueError("risk per trade must be between 0.05% and 5%")
         s["risk_pct"] = float(risk_pct)
-    if reset:
+    if reset:   # only trades placed after this point count (by trade number, not by clock time)
         s["started_at"] = time.time()
+        last = db.q1("SELECT COALESCE(MAX(id), 0) m FROM trades")
+        s["start_after_id"] = int(last["m"] or 0)
     db.kv_set("demo_account", s)
     return s
 
 
-def _closed_pnl(since: float) -> float:
+def _closed_pnl(after_id: int) -> float:
     r = db.q1("SELECT COALESCE(SUM(r_multiple * risk_amount), 0) v FROM trades "
-              "WHERE demo=1 AND opened_at >= ? AND r_multiple IS NOT NULL AND risk_amount IS NOT NULL", (since,))
+              "WHERE demo=1 AND id > ? AND r_multiple IS NOT NULL AND risk_amount IS NOT NULL", (after_id,))
     return float(r["v"] or 0)
 
 
 def balance() -> float:
     s = settings()
-    return s["start_balance"] + _closed_pnl(s["started_at"])
+    return s["start_balance"] + _closed_pnl(int(s.get("start_after_id", 0)))
 
 
 def size_trade(symbol_quote: str, risk_distance: float) -> dict:
@@ -85,8 +87,8 @@ def summary(with_prices: bool = True) -> dict:
     s = settings()
     since = s["started_at"]
     rows = db.q("SELECT t.*, a.is_signal, a.source analysis_source, a.probability FROM trades t "
-                "JOIN analyses a ON a.id=t.analysis_id WHERE t.demo=1 AND t.opened_at >= ? "
-                "ORDER BY t.opened_at DESC", (since,))
+                "JOIN analyses a ON a.id=t.analysis_id WHERE t.demo=1 AND t.id > ? "
+                "ORDER BY t.opened_at DESC", (int(s.get("start_after_id", 0)),))
     open_ = [r for r in rows if r["status"] == "open"]
     pending = [r for r in rows if r["status"] == "pending"]
     closed = [r for r in rows if r["r_multiple"] is not None and r["status"] not in ("open", "pending")]

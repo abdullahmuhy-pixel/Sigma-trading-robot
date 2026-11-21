@@ -358,3 +358,16 @@ def test_prune_keeps_what_matters(offline):
     assert shadow not in ids and sig in ids and keep_sig["analysis_id"] in ids
     assert not db.q("SELECT id FROM trades WHERE analysis_id=?", (shadow,))
     assert db.size_mb() is not None
+
+
+def test_first_ever_demo_trade_is_counted(offline):
+    """Regression: the very first trade created the demo account a fraction of a second AFTER the
+    trade's open time, so the account page left it out."""
+    from sigma import account
+    db.execute("DELETE FROM kv WHERE key='demo_account'")
+    res = engine.analyze("BTCUSD", "H1", source="chat")
+    sm = account.summary(with_prices=False)
+    assert any(r["id"] == res["trade_id"] for r in sm["open"] + sm["pending"])
+    account.update_settings(reset=True)                   # after a reset, older trades are excluded
+    sm = account.summary(with_prices=False)
+    assert not any(r["id"] == res["trade_id"] for r in sm["open"] + sm["pending"])
