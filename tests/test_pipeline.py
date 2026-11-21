@@ -295,3 +295,15 @@ def test_scanner_alert_only_when_deep_analysis_confirms(offline, monkeypatch):
     monkeypatch.setattr(deep, "analyze", lambda *a, **k: {**confirmed, "is_signal": False})
     assert alerts.consider(fake) is None                       # deep analysis disagreed: no alert
     assert alerts.consider({**fake, "is_signal": False}) is None
+
+
+def test_find_trades_for_goal(offline):
+    from sigma import goals
+    goals.set_goal(100_000, "USD", 2_000, "week", risk_pct=1)
+    out = goals.find_trades("H1", ["EURUSD", "GBPUSD"], max_trades=2)
+    assert out["trades"] and out["plan"]["goal"]["target"] == 2_000
+    t = out["trades"][0]
+    assert t["order_type"].split()[0] in ("BUY", "SELL")
+    assert t["if_stop_loss_hits"] == pytest.approx(-1_000) and t["if_take_profit_hits"] == pytest.approx(1_000 * config.REWARD_R)
+    # 1% of 100,000 USD over the stop distance, in standard lots of 100,000 units
+    assert t["lots"] == pytest.approx(1_000 / abs(t["entry"] - t["stop_loss"]) / 100_000, rel=1e-3)

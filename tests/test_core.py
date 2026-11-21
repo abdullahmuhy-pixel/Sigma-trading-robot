@@ -293,3 +293,31 @@ def test_signal_explanation_is_complete():
     assert side in ex["summary"] and r["plan"]["order_type"] in ex["summary"]
     assert ex["for"] and all(c["impact"] > 0 for c in ex["for"]) and all(c["impact"] < 0 for c in ex["against"])
     assert "stop loss" in ex["invalidation"]
+
+
+def test_goal_monte_carlo_matches_exact_maths():
+    from math import comb
+    from sigma import goals
+    bal, tgt, risk, n, p, w, l = 10_000, 300, 1.0, 15, 0.4, 2.0, -1.0
+    # with fixed % risk the final balance depends only on how many trades win
+    exact = sum(comb(n, k) * p**k * (1 - p)**(n - k) for k in range(n + 1)
+                if bal * (1 + w * risk / 100)**k * (1 + l * risk / 100)**(n - k) - bal >= tgt)
+    mc = goals.simulate(bal, tgt, risk, n, p, w, l, sims=60000)["p_reach_target"]
+    assert mc == pytest.approx(exact, abs=0.01)
+    assert goals.simulate(bal, tgt, risk, n, 1.0, w, l)["p_reach_target"] == 1.0
+
+
+def test_goal_plan_numbers_and_warnings():
+    from sigma import goals
+    db.connect(os.environ["SIGMA_DB"])
+    goals.set_goal(50_000, "ZAR", 1_000, "weekly", risk_pct=1)
+    p = goals.plan()
+    assert p["goal"]["period"] == "week" and p["required_return_pct"] == pytest.approx(2.0)
+    assert p["monthly_equivalent_pct"] == pytest.approx(2.0 * 21 / 5, abs=0.1)
+    assert p["risk_per_trade"] == pytest.approx(500.0)
+    assert p["full_wins_needed"] == int(np.ceil(1000 / (500 * p["robot_edge"]["avg_win_r"])))
+    goals.set_goal(1_000, "USD", 500, "day")           # 50% in a day
+    assert any("not realistic" in w for w in goals.plan()["warnings"])
+    goals.log_result(120, "EURUSD win")
+    pl = goals.plan()
+    assert pl["progress_this_period"] == 120 and pl["remaining"] == 380 and pl["goal"]["balance"] == 1_120
