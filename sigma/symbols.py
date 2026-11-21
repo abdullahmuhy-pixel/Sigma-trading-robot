@@ -23,13 +23,16 @@ class Instrument:
     deriv: str | None = None
     twelvedata: str | None = None
     binance: str | None = None
+    label: str = ""
 
     @property
     def has_fundamentals(self) -> bool:
-        return self.asset_class in ("forex", "metal", "crypto", "index", "stock")
+        return self.asset_class in ("forex", "metal", "crypto", "index", "stock", "commodity")
 
     @property
     def display(self) -> str:
+        if self.label:
+            return self.label
         return f"{self.base}/{self.quote}" if self.base and self.quote else self.name
 
 
@@ -51,29 +54,67 @@ INDICES = {  # canonical -> (twelvedata symbol, deriv symbol)
 }
 
 
+def _pair(base: str, quote: str, label: str = "") -> Instrument | None:
+    if quote == "USDT":
+        quote = "USD"
+    if base in FX and quote in FX:
+        return Instrument(base + quote, "forex", base, quote, deriv=f"frx{base}{quote}",
+                          twelvedata=f"{base}/{quote}", label=label)
+    if base in METALS:
+        return Instrument(base + quote, "metal", base, quote, deriv=f"frx{base}{quote}",
+                          twelvedata=f"{base}/{quote}", label=label)
+    if base in CRYPTO or (len(base) >= 3 and quote == "USD" and label.lower().startswith(base.lower())):
+        return Instrument(base + quote, "crypto", base, quote, deriv=f"cry{base}{quote}",
+                          twelvedata=f"{base}/{quote}", binance=f"{base}USDT", label=label)
+    return None
+
+
+def _from_catalog(item: dict) -> Instrument:
+    sym, market, label = item["symbol"], item["market"], item["name"]
+    if sym.startswith("frx") and len(sym) == 9:
+        p = _pair(sym[3:6], sym[6:9])
+        if p:
+            return p
+    if sym.startswith("cry"):
+        code = sym[3:]
+        base, quote = (code[:-3], code[-3:]) if len(code) > 3 else (code, "USD")
+        return Instrument(base + quote, "crypto", base, quote, deriv=sym, twelvedata=f"{base}/{quote}",
+                          binance=f"{base}USDT", label=label)
+    if market == "commodities":
+        return Instrument(sym, "commodity", deriv=sym, label=label)
+    if market == "indices":
+        return Instrument(sym, "index", deriv=sym, label=label)
+    if market == "basket_index":
+        return Instrument(sym, "basket", deriv=sym, label=label)
+    return Instrument(sym, "synthetic", deriv=sym, label=label)
+
+
 def resolve(name: str) -> Instrument:
+    """Canonical instrument for anything the user types: EURUSD, eur/usd, frxEURUSD, XAUUSD, BTCUSD,
+    cryBTCUSD, R_75, V75, 'Volatility 75 (1s) Index', Boom 1000, NDX, any Deriv code."""
     raw = name.strip()
-    n = raw.upper().replace("/", "").replace("-", "")
-    if raw in SYNTHETICS or n in {k.upper() for k in SYNTHETICS}:
-        key = next(k for k in SYNTHETICS if k.upper() == n or k == raw)
-        return Instrument(key, "synthetic", deriv=key)
+    n = raw.upper().replace("/", "").replace("-", "").replace(" ", "")
+    if n.startswith("FRX") and len(n) == 9:
+        n = n[3:]
+    if n.startswith("CRY"):
+        n = n[3:]
+    for k, v in SYNTHETICS.items():
+        if k.upper() == n:
+            return Instrument(k, "synthetic", deriv=k, label=v)
     if n in INDICES:
         td, dv = INDICES[n]
         return Instrument(n, "index", deriv=dv, twelvedata=td)
-    if len(n) == 6 or (len(n) in (6, 7) and n[:3] in CRYPTO | METALS | FX):
-        base, quote = n[:3], n[3:]
-        if quote == "USDT":
-            quote = "USD"
-        if base in FX and quote in FX:
-            return Instrument(base + quote, "forex", base, quote, deriv=f"frx{base}{quote}",
-                              twelvedata=f"{base}/{quote}")
-        if base in METALS:
-            return Instrument(base + quote, "metal", base, quote, deriv=f"frx{base}{quote}",
-                              twelvedata=f"{base}/{quote}")
-        if base in CRYPTO:
-            return Instrument(base + quote, "crypto", base, quote, deriv=f"cry{base}{quote}",
-                              twelvedata=f"{base}/{quote}", binance=f"{base}USDT")
-    # Fallback: treat as a stock / anything Twelve Data knows
+    if 6 <= len(n) <= 7 and n.isalpha():
+        p = _pair(n[:3], n[3:])
+        if p:
+            return p
+    try:  # anything else Deriv lists (names, aliases like V75, codes like JD25, WLDUSD, OTC_AEX)
+        from .data.deriv_catalog import find
+        item = find(raw)
+        if item:
+            return _from_catalog(item)
+    except Exception:
+        pass
     return Instrument(n, "stock", twelvedata=raw.upper())
 
 

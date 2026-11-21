@@ -61,7 +61,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 .wbar .lbl{width:130px;color:var(--dim)}.wbar .track{flex:1;height:10px;background:var(--panel2);border-radius:5px;position:relative}
 .wbar .fill{position:absolute;top:0;height:10px;border-radius:5px}
 h3{margin:18px 0 8px;font-size:14px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-canvas{width:100%;height:220px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+#eq{width:100%;height:220px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
 .muted{color:var(--dim)}
 #attach{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px}.thumb{position:relative}.thumb img{height:54px;border-radius:6px;border:1px solid var(--line)}
 .thumb span{position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;text-align:center;cursor:pointer;line-height:18px}
@@ -92,6 +92,8 @@ canvas{width:100%;height:220px;background:var(--panel2);border:1px solid var(--l
     <div class="quick">
       <button class="ghost" data-q="Scan the watchlist on H1 and give me the best signals">Scan H1</button>
       <button class="ghost" data-q="Full multi-timeframe analysis of XAUUSD with fundamentals and news">Gold MTF</button>
+      <button class="ghost" data-q="Scan the Deriv synthetic indices (Volatility, Boom/Crash, Jump, Step) on M15 and rank the best setups">Scan synthetics</button>
+      <button class="ghost" data-q="Scan BTCUSD, ETHUSD and the other main Deriv crypto pairs on H1 and give me the best setup">Scan crypto</button>
       <button class="ghost" data-q="What high-impact news is coming in the next 24 hours?">News today</button>
       <button class="ghost" data-q="What have you learned so far? Show your learning report and best and worst setups.">What have you learned?</button>
       <button class="ghost" data-fill="Review my trade: BUY EURUSD on H1, entry 1.0850, stop loss 1.0820, take profit 1.0920">Review my trade</button>
@@ -103,7 +105,8 @@ canvas{width:100%;height:220px;background:var(--panel2);border:1px solid var(--l
   </section>
   <section id="right">
     <div class="bar">
-      <input id="sym" value="EURUSD" size="10">
+      <select id="mkt" title="Market"><option value="">All markets</option></select>
+      <select id="sym" title="Instrument" style="max-width:240px"><option value="frxEURUSD">EUR/USD</option></select>
       <select id="tf"><option>M5</option><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
       <button id="analyze">Analyze</button>
       <button class="ghost" id="scan">Scan watchlist</button>
@@ -212,7 +215,18 @@ function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
 $('#analyze').onclick=async()=>{const b=$('#analyze');b.disabled=true;await loadChart();
   try{const a=await api(`/api/analyze?symbol=${encodeURIComponent($('#sym').value)}&timeframe=${$('#tf').value}`);showCard(a);drawLevels(a);refreshTabs()}
   catch(e){$('#card').style.display='block';$('#card').textContent=e.message}finally{b.disabled=false}};
-$('#tf').onchange=loadChart;$('#sym').onchange=loadChart;
+$('#tf').onchange=loadChart;$('#sym').onchange=()=>{try{localStorage.setItem('sigma_sym',$('#sym').value)}catch(e){};loadChart()};
+// ---------------- every Deriv instrument, grouped by market
+let SYMS=[];
+function fillSymbols(){const m=$('#mkt').value,cur=$('#sym').value;const list=SYMS.filter(i=>!m||i.market_label===m);
+  const groups={};list.forEach(i=>(groups[i.submarket_label||i.market_label]??=[]).push(i));
+  $('#sym').innerHTML=Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(g)}">${xs.map(i=>`<option value="${esc(i.symbol)}">${i.open?'':'◌ '}${esc(i.name)}</option>`).join('')}</optgroup>`).join('');
+  if(list.some(i=>i.symbol===cur))$('#sym').value=cur}
+async function loadSymbols(){try{SYMS=await api('/api/symbols');const mk=[...new Set(SYMS.map(i=>i.market_label))];
+  $('#mkt').innerHTML='<option value="">All markets</option>'+mk.map(x=>`<option>${esc(x)}</option>`).join('');
+  let saved='frxEURUSD';try{saved=localStorage.getItem('sigma_sym')||saved}catch(e){}
+  fillSymbols();if(SYMS.some(i=>i.symbol===saved))$('#sym').value=saved;loadChart()}catch(e){$('#provider').textContent='symbols: '+e.message}}
+$('#mkt').onchange=()=>{fillSymbols();loadChart()};loadSymbols();
 $('#scan').onclick=async()=>{await post('/api/scan',{timeframe:$('#tf').value});status()};
 function showCard(a){const c=$('#card');c.style.display='block';const dir=a.direction==='LONG';
   c.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -269,7 +283,7 @@ function drawLine(cv,vals){const ctx=cv.getContext('2d');const w=cv.width=cv.cli
   ctx.strokeStyle='#243041';ctx.beginPath();ctx.moveTo(0,y(0));ctx.lineTo(w,y(0));ctx.stroke();
   ctx.strokeStyle=v[v.length-1]>=0?'#22c55e':'#ef4444';ctx.lineWidth=3;ctx.beginPath();v.forEach((p,i)=>i?ctx.lineTo(i/(v.length-1)*w,y(p)):ctx.moveTo(0,y(p)));ctx.stroke()}
 $('#btrun').onclick=async()=>{await post('/api/backtest',{symbol:$('#btsym').value,timeframe:$('#bttf').value,bars:+$('#btbars').value});refreshTabs()};
-setInterval(refreshTabs,15000);loadChart();refreshTabs();
+setInterval(refreshTabs,15000);refreshTabs();
 </script>
 </body>
 </html>

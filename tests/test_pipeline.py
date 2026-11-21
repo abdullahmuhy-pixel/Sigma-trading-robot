@@ -196,3 +196,43 @@ def test_closed_market_never_signals_or_trades(offline, monkeypatch):
     chat = engine.analyze("EURUSD", "M15", source="chat")
     assert chat["analysis_id"] and not chat.get("trade_id")
     assert db.q1("SELECT COUNT(*) n FROM trades")["n"] == 0
+
+
+def test_every_deriv_instrument_resolves(monkeypatch):
+    from sigma.data import deriv_catalog, market as mk
+    from sigma.symbols import resolve
+    new_api = [  # new Deriv API field names
+        {"underlying_symbol": "R_75", "underlying_symbol_name": "Volatility 75 Index", "market": "synthetic_index",
+         "submarket": "random_index", "exchange_is_open": 1, "is_trading_suspended": 0, "pip_size": 0.0001},
+        {"underlying_symbol": "1HZ150V", "underlying_symbol_name": "Volatility 150 (1s) Index", "market": "synthetic_index",
+         "submarket": "random_index", "exchange_is_open": 1, "is_trading_suspended": 0, "pip_size": 0.01},
+        {"underlying_symbol": "JD50", "underlying_symbol_name": "Jump 50 Index", "market": "synthetic_index",
+         "submarket": "jump_index", "exchange_is_open": 1, "is_trading_suspended": 0, "pip_size": 0.01}]
+    legacy = [  # legacy field names
+        {"symbol": "cryXRPUSD", "display_name": "XRP/USD", "market": "cryptocurrency", "submarket": "non_stable_coin",
+         "exchange_is_open": 1, "pip": 0.0001},
+        {"symbol": "frxXAUUSD", "display_name": "Gold/USD", "market": "commodities", "submarket": "metals",
+         "exchange_is_open": 0, "pip": 0.01},
+        {"symbol": "WLDUSD", "display_name": "USD Basket", "market": "basket_index", "submarket": "forex_basket",
+         "exchange_is_open": 1, "pip": 0.001},
+        {"symbol": "OTC_AEX", "display_name": "Netherlands 25", "market": "indices", "submarket": "europe_OTC",
+         "exchange_is_open": 0, "pip": 0.01}]
+    monkeypatch.setattr(mk, "deriv_active_symbols", lambda: new_api + legacy)
+    deriv_catalog._cache.update(t=0, items=[])
+    items = deriv_catalog.catalog(force=True)
+    assert len(items) == 7 and all(i["symbol"] and i["name"] for i in items)
+    assert resolve("V75").name == "R_75"
+    assert resolve("Volatility 150 (1s) Index").deriv == "1HZ150V"
+    assert resolve("v150 1s").asset_class == "synthetic"
+    assert resolve("Jump 50").name == "JD50"
+    x = resolve("cryXRPUSD")
+    assert x.asset_class == "crypto" and x.deriv == "cryXRPUSD"
+    assert resolve("frxXAUUSD").asset_class == "metal" and resolve("frxXAUUSD").name == "XAUUSD"
+    b = resolve("WLDUSD")
+    assert b.asset_class == "basket" and not b.has_fundamentals
+    assert resolve("OTC_AEX").asset_class == "index"
+    assert [i["symbol"] for i in deriv_catalog.search("jump")] == ["JD50"]
+    assert {i["market_label"] for i in deriv_catalog.search(market="cryptocurrency")} == {"Crypto"}
+    # crypto prices now come from Deriv first, so they match the Deriv platform
+    from sigma.data.market import _routes
+    assert _routes(resolve("BTCUSD"))[0] == ("deriv", "cryBTCUSD")

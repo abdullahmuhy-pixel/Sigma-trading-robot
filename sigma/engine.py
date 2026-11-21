@@ -15,7 +15,7 @@ from .symbols import HIGHER_TF, Instrument, resolve, tf_seconds
 log = logging.getLogger("sigma.engine")
 
 COST_FRACTION = {"forex": 0.00008, "metal": 0.00012, "crypto": 0.0006, "synthetic": 0.0002,
-                 "index": 0.0001, "stock": 0.0005}
+                 "index": 0.0001, "stock": 0.0005, "commodity": 0.0004, "basket": 0.0002}
 
 
 def cost_in_price(inst: Instrument, price: float) -> float:

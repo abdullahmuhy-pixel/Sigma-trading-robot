@@ -26,7 +26,8 @@ log = logging.getLogger("sigma.market")
 DERIV_PUBLIC_WS = "wss://api.derivws.com/trading/v1/options/ws/public"
 DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id={app_id}"
 
-_td_limit = RateLimiter(8)          # Twelve Data free plan: 8 credits / minute
+_td_limit = RateLimiter(8)
+_deriv_limit = RateLimiter(180)    # Deriv allows 220 calls/min; stay under it          # Twelve Data free plan: 8 credits / minute
 _deriv_slots = threading.BoundedSemaphore(6)  # parallel Deriv connections (chart never waits for a scan)
 
 
@@ -57,6 +58,7 @@ def _deriv_request(payload: dict, timeout: float = 15) -> dict:
     last_err: Exception | None = None
     for url in (DERIV_PUBLIC_WS, DERIV_LEGACY_WS.format(app_id=config.DERIV_APP_ID)):
         try:
+            _deriv_limit.wait()
             with _deriv_slots:
                 ws = websocket.create_connection(url, timeout=timeout)
                 try:
@@ -129,14 +131,15 @@ def binance_candles(symbol: str, tf: str, count: int = 500, end_ms: int | None =
 # ------------------------------------------------------------- Routing -----
 def _routes(inst: Instrument):
     c = inst.asset_class
-    if c == "synthetic":
+    if c in ("synthetic", "basket", "commodity"):
         return [("deriv", inst.deriv)]
     if c in ("forex", "metal"):
         return [("deriv", inst.deriv), ("twelvedata", inst.twelvedata)]
     if c == "crypto":
-        return [("binance", inst.binance), ("deriv", inst.deriv), ("twelvedata", inst.twelvedata)]
+        # Deriv first so prices match what you trade on Deriv; Binance as backup
+        return [("deriv", inst.deriv), ("binance", inst.binance), ("twelvedata", inst.twelvedata)]
     if c == "index":
-        return [("twelvedata", inst.twelvedata), ("deriv", inst.deriv)]
+        return [("deriv", inst.deriv), ("twelvedata", inst.twelvedata)]
     return [("twelvedata", inst.twelvedata)]
 
 
@@ -179,7 +182,7 @@ def last_price(name: str) -> float:
 def history(name: str, tf: str, bars: int = 3000) -> pd.DataFrame:
     """Longer history for backtests (pages backwards where the provider allows)."""
     inst = resolve(name)
-    if inst.asset_class == "crypto" and inst.binance:
+    if inst.asset_class == "crypto" and inst.binance and not inst.deriv:
         frames, end_ms = [], None
         while sum(len(f) for f in frames) < bars:
             f = binance_candles(inst.binance, tf, 1000, end_ms)

@@ -23,6 +23,7 @@ KEYWORDS = {
     "XAG": ["silver", "xag"],
     "BTC": ["bitcoin", "btc", "crypto"],
     "ETH": ["ethereum", "eth ", "ether"],
+    "OIL": ["oil", "crude", "brent", "wti", "opec"],
 }
 HAWKISH = ["hike", "hawkish", "tighten", "higher for longer", "hot inflation", "inflation rises",
            "inflation accelerat", "strong jobs", "beats", "beat expectations", "surge", "rally", "rallies",
@@ -70,7 +71,7 @@ def score_headlines(items: list[dict], base: str, quote: str = "", now: float | 
 def analyze(inst: Instrument) -> dict:
     if not inst.has_fundamentals:
         return {"score": 0.0, "available": False, "headlines": []}
-    base = inst.base or inst.name
+    base = inst.base or ("OIL" if "oil" in inst.display.lower() else inst.name)
     quote = inst.quote if inst.quote and inst.asset_class == "forex" else ("USD" if inst.asset_class == "metal" else "")
     items = news.headlines()
     score, used = score_headlines(items, base, quote)
@@ -86,9 +87,9 @@ def analyze(inst: Instrument) -> dict:
 def event_risk(inst: Instrument, now: float | None = None) -> dict:
     now = now or time.time()
     ccys = {c for c in (inst.base, inst.quote) if c}
-    if inst.asset_class in ("metal", "crypto", "index", "stock"):
+    if inst.asset_class in ("metal", "crypto", "index", "stock", "commodity"):
         ccys.add("USD")
-    if inst.asset_class == "synthetic":
+    if inst.asset_class in ("synthetic", "basket"):
         return {"blocked": False, "upcoming": []}
     upcoming = [e for e in news.calendar()
                 if e["currency"] in ccys and -1800 <= e["time"] - now <= 24 * 3600]

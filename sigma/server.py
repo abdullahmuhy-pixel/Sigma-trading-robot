@@ -177,6 +177,20 @@ def analyze(symbol: str, timeframe: str = "H1"):
         raise HTTPException(400, str(e))
 
 
+@app.get("/api/symbols")
+def symbols(q: str = "", market: str = ""):
+    """Every Deriv instrument, grouped in the UI by market."""
+    from .data import deriv_catalog
+    items = deriv_catalog.search(q, market, limit=2000)
+    if not items:  # Deriv unreachable: fall back to the built-in list
+        from .symbols import SYNTHETICS
+        items = [{"symbol": s, "name": resolve(s).display, "market_label": "Watchlist", "open": True}
+                 for s in config.WATCHLIST] + \
+                [{"symbol": k, "name": v, "market_label": "Synthetic indices", "open": True}
+                 for k, v in SYNTHETICS.items() if k not in config.WATCHLIST]
+    return items
+
+
 @app.get("/api/candles")
 def candles(symbol: str, timeframe: str = "H1", count: int = 300):
     try:
