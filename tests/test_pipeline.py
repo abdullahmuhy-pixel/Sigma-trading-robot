@@ -1,4 +1,5 @@
 """End-to-end live pipeline with the network replaced by synthetic data."""
+import json
 import os
 import sys
 import tempfile
@@ -412,3 +413,34 @@ def test_session_scan_alerts_without_deep_or_trades(offline):
     assert sessions.due(london_open + 120) == []                       # never scans the same open twice
     sessions.update("London", pairs=["eurusd", "xauusd"])
     assert sessions.settings()["London"]["pairs"] == ["EURUSD", "XAUUSD"]
+
+
+def test_web_push(offline, monkeypatch):
+    import base64
+    from cryptography.hazmat.primitives import serialization
+    from sigma import alerts, push
+    k = push.keys()
+    pub = base64.urlsafe_b64decode(k["public"] + "=" * (-len(k["public"]) % 4))
+    assert len(pub) == 65 and pub[0] == 4                       # uncompressed P-256 point, as browsers need
+    der = base64.urlsafe_b64decode(k["private_der"] + "=" * (-len(k["private_der"]) % 4))
+    priv = serialization.load_der_private_key(der, None)
+    assert priv.public_key().public_bytes(serialization.Encoding.X962,
+                                          serialization.PublicFormat.UncompressedPoint) == pub
+    assert push.keys() == k                                      # created once, then reused
+    sub = lambda n: {"endpoint": f"https://push.example/{n}", "keys": {"p256dh": "x", "auth": "y"}}  # noqa: E731
+    push.subscribe(sub("phone"), "Android")
+    push.subscribe(sub("tablet"), "Android")
+    push.subscribe(sub("phone"), "Android")                      # same device twice: one row
+    assert len(push.subscriptions()) == 2
+    with pytest.raises(ValueError):
+        push.subscribe({"endpoint": "x"})
+    got = []
+    r = push.send_all("T", "B", sender=lambda info, data: got.append(json.loads(data)) or
+                      (410 if info["endpoint"].endswith("tablet") else 201))
+    assert r == {"sent": 1, "removed": 1, "failed": 0} and got[0]["title"] == "T" and got[0]["url"] == "/#markets"
+    assert [s["endpoint"] for s in push.subscriptions()] == ["https://push.example/phone"]   # dead device removed
+    sent = []
+    monkeypatch.setattr(push, "notify", lambda title, body, url="/#markets", tag=None: sent.append((title, body)))
+    res = engine.analyze("EURUSD", "H1", source="live", journal=False)
+    alerts.session_opportunity("London", res)
+    assert sent and sent[0][0].startswith("⏰ London open:") and "Entry" in sent[0][1]

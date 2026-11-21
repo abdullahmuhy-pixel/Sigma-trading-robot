@@ -104,6 +104,11 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;background:var(--up)}.dot.off{background:#555}
 #toast{position:fixed;right:16px;bottom:calc(var(--nav) + 16px);max-width:min(420px,92vw);background:#1d1a10;border:1px solid #7a5a12;border-radius:12px;padding:12px 14px;display:none;z-index:60;cursor:pointer}
 #install{display:none}
+#notif{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:70;align-items:center;justify-content:center;padding:20px}
+#notif.on{display:flex}
+#notif .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:420px;width:100%}
+#notif h2{margin:0 0 8px;font-size:19px}#notif p{color:var(--dim);margin:0 0 14px}
+#notif .row{display:flex;gap:8px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -200,6 +205,11 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
   <input id="psearch" placeholder="Search: V75, Boom 1000, gold, BTC, EUR/USD, US Tech…" autocomplete="off">
   <div id="pchips"></div><div id="plist"></div></div></div>
 <div id="toast"></div>
+<div id="notif"><div class="card">
+  <h2>🔔 Allow notifications?</h2>
+  <p id="notiftext">Sigma alerts you when it spots a trading opportunity (session opens and confirmed signals), even when the app is closed.</p>
+  <div class="row"><button class="ghost" id="notiflater">Not now</button><button id="notifallow">Allow notifications</button></div>
+</div></div>
 
 <script>
 const TZ='Africa/Johannesburg';
@@ -374,9 +384,15 @@ function drawLine(cv,vals,emptyMsg){const ctx=cv.getContext('2d');const w=cv.wid
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
   document.querySelectorAll('.sub').forEach(x=>x.classList.toggle('on',x.id==='s-'+t.dataset.s));loadMarkets()});
 async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.s;try{
- if(on==='opps'){const al=await api('/api/alerts');$('#s-opps').innerHTML=al.length?al.slice().reverse().map(x=>`<div class="box"><div class="muted">${fmtT(x.created_at)}${x.kind==='session'?' · '+esc(x.session)+' open · fast scan':' · deep-confirmed'}</div>${DOMPurify.sanitize(marked.parse(x.body))}
+ if(on==='opps'){const al=await api('/api/alerts');
+   const ns=!PUSH_OK?(isIOS&&!standalone?'Add Sigma to your Home Screen to get notifications.':'This browser cannot receive push notifications.')
+     :Notification.permission==='granted'?(pushOn?'🔔 Notifications are on for this device.':'🔔 Allowed, connecting…'):Notification.permission==='denied'?'🔕 Blocked in browser settings.':'🔕 Off for this device.';
+   const head=`<div class="box" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${ns}</span>${PUSH_OK&&Notification.permission==='granted'?'<button class="ghost" id="pushtest">Send test notification</button>':PUSH_OK&&Notification.permission==='default'?'<button id="pushask">Turn on notifications</button>':''}</div>`;
+   $('#s-opps').innerHTML=head+(al.length?al.slice().reverse().map(x=>`<div class="box"><div class="muted">${fmtT(x.created_at)}${x.kind==='session'?' · '+esc(x.session)+' open · fast scan':' · deep-confirmed'}</div>${DOMPurify.sanitize(marked.parse(x.body))}
      <button class="${x.kind==='session'?'':'ghost'}" data-deep="${esc(x.symbol)}" data-tf="${esc(x.timeframe)}">${x.kind==='session'?'Run deep analysis':'Open on chart'}</button></div>`).join('')
-   :'<p class="muted">The robot scans the watchlist at every candle close. When it finds a signal and a deep analysis confirms it, the opportunity appears here, in the chat, and as a notification (tap 🔔 to allow notifications).</p>'}
+   :'<p class="muted">The robot scans the watchlist at every candle close and fast-scans each session open. Opportunities appear here, in the chat, and as a phone notification.</p>');
+   const pt=$('#pushtest');if(pt)pt.onclick=async()=>{await ensurePush();const r=await post('/api/push/test',{});toast(r.sent?`Test sent to ${r.sent} device${r.sent>1?'s':''}`:'No device received it. Try turning notifications off and on again.')};
+   const pa=$('#pushask');if(pa)pa.onclick=()=>{sessionStorage.removeItem('sigma_notif_later');askNotifications()}}
  if(on==='sessions'){const ss=await api('/api/sessions');
    $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Change the pairs in the chat, e.g. "set the London session pairs to EURUSD, GBPUSD, XAUUSD".</p>
    <div class="scroll">${table([['Session',r=>`<b>${esc(r.session)}</b>`],['Next open (SAST)',r=>esc(r.next_open_local||'–')],['Pairs',r=>esc(r.pairs.join(', '))],['Last scan',r=>r.last_scan?fmtT(r.last_scan.at)+` · ${r.last_scan.opportunities} found`:'–'],['',r=>`<button class="ghost" data-scan="${esc(r.session)}">Scan now</button>`],['On',r=>r.enabled?'✓':'off']],ss)}</div>`;
@@ -421,19 +437,44 @@ async function pollAlerts(){try{const al=await api('/api/alerts'+(lastAlert!=nul
   if(lastAlert==null){lastAlert=al.length?al[al.length-1].id:0;return}
   for(const a of al){lastAlert=a.id;unseen++;
     toast(`<b>📡 ${esc(a.title)}</b><br><span class="muted">Tap to see the full analysis</span>`,'#markets');
-    try{if('Notification' in window&&Notification.permission==='granted'){const reg=await navigator.serviceWorker?.getRegistration();
+    try{if(!pushOn&&'Notification' in window&&Notification.permission==='granted'){const reg=await navigator.serviceWorker?.getRegistration();
       const opts={body:'Sigma found an opportunity. Tap to open.',icon:'/icon-192.png',tag:'sigma-'+a.id};
       if(reg)reg.showNotification('📡 '+a.title,opts);else new Notification('📡 '+a.title,opts)}}catch(e){}}
   $('#belln').textContent=unseen;$('#belln').style.display=unseen?'block':'none'}catch(e){}}
 $('#bell').onclick=async()=>{unseen=0;$('#belln').style.display='none';
-  if('Notification' in window&&Notification.permission==='default'){try{await Notification.requestPermission()}catch(e){}}
+  if(PUSH_OK&&Notification.permission==='default'){sessionStorage.removeItem('sigma_notif_later');askNotifications()}
   location.hash='#markets';document.querySelector('.tab[data-s="opps"]').click()};
+
+// ---------------- web push: alerts even when the app is closed
+const PUSH_OK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent),standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+let pushOn=false;
+function b64ToBytes(s){const p='='.repeat((4-s.length%4)%4);const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from([...b].map(c=>c.charCodeAt(0)))}
+async function ensurePush(){if(!PUSH_OK||Notification.permission!=='granted')return false;
+  try{const reg=await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
+    if(!sub){const {public_key}=await api('/api/push/key');sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(public_key)})}
+    await post('/api/push/subscribe',{subscription:sub.toJSON(),device:navigator.userAgent});pushOn=true;return true}catch(e){console.warn('push',e);return false}}
+function askNotifications(){
+  if(isIOS&&!standalone){ // iPhone/iPad: push only works for apps added to the Home Screen
+    $('#notiftext').innerHTML='On iPhone and iPad, notifications work once Sigma is on your Home Screen: tap <b>Share</b> → <b>Add to Home Screen</b>, then open Sigma from the Home Screen and allow notifications.';
+    $('#notifallow').style.display='none';$('#notiflater').textContent='OK';$('#notif').classList.add('on');return}
+  if(!PUSH_OK)return;
+  if(Notification.permission==='granted'){ensurePush();return}
+  if(Notification.permission==='denied'){if(!sessionStorage.getItem('sigma_denied_note')){sessionStorage.setItem('sigma_denied_note','1');
+    toast('🔕 Notifications are blocked for Sigma. To get alerts, allow them in your browser\'s site settings (lock icon next to the address).')}return}
+  if(!sessionStorage.getItem('sigma_notif_later'))$('#notif').classList.add('on')}
+$('#notiflater').onclick=()=>{sessionStorage.setItem('sigma_notif_later','1');$('#notif').classList.remove('on')};
+$('#notifallow').onclick=async()=>{$('#notif').classList.remove('on');
+  try{const p=await Notification.requestPermission();
+    if(p==='granted'&&await ensurePush()){toast('🔔 Notifications on. Sending a test…');await post('/api/push/test',{})}
+    else if(p==='denied')toast('Notifications blocked. You can allow them later in your browser\'s site settings.')}catch(e){toast('Could not turn on notifications: '+esc(e.message))}};
 
 // ---------------- install & start
 let installEvt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;$('#install').style.display='inline-block'});
 $('#install').onclick=async()=>{if(installEvt){installEvt.prompt();await installEvt.userChoice;installEvt=null;$('#install').style.display='none'}};
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 show();syncChat();loadSymbols();pollAlerts();
+setTimeout(askNotifications,1200);
 setInterval(()=>{if(!busy)syncChat()},4000);setInterval(pollAlerts,15000);
 setInterval(()=>{if($('#page-paper').classList.contains('on'))loadPaper();if($('#page-markets').classList.contains('on'))loadMarkets()},20000);
 </script>

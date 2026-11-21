@@ -49,7 +49,20 @@ def consider(scan_result: dict) -> dict | None:
                                "timeframe": r["timeframe"], "order_type": r["plan"]["order_type"],
                                "title": title, "body": body})
     db.insert("chat", {"session": "default", "created_at": now, "role": "assistant", "content": body})
+    _push("📡 " + title, r, "Deep-confirmed")
     return {"id": aid, "title": title, "body": body}
+
+
+def _push(title: str, r: dict, kind: str) -> None:
+    """Phone notification: the essentials fit in one line."""
+    try:
+        from . import push
+        tps = " ".join(f"{t['name']} {_fmt(t['price'])}" for t in (r.get("take_profits") or [])[:3])
+        push.notify(title, f"{kind}. Entry {_fmt(r['entry'])} · SL {_fmt(r['sl'])} · {tps} · "
+                           f"P(win) {r['probability']:.0%}. Tap to open.", url="/#markets",
+                    tag=f"{r['symbol']}-{r['timeframe']}")
+    except Exception as e:
+        log.debug("push skipped: %s", e)
 
 
 def session_opportunity(session: str, r: dict) -> dict:
@@ -68,6 +81,7 @@ def session_opportunity(session: str, r: dict) -> dict:
     al_id = db.insert("alerts", {"created_at": now, "analysis_id": aid, "symbol": r["symbol"], "timeframe": r["timeframe"],
                                  "order_type": pl["order_type"], "title": title, "body": body, "kind": "session",
                                  "session": session})
+    _push("⏰ " + title, r, "Fast scan, deep analysis on request")
     return {"id": al_id, "title": title, "symbol": r["symbol"], "timeframe": r["timeframe"]}
 
 

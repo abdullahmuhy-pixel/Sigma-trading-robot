@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS alerts (
     session TEXT
 );
 
+CREATE TABLE IF NOT EXISTS push_subs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,  -- one row per device/browser that allowed notifications
+    sub TEXT NOT NULL,              -- json push subscription
+    device TEXT,
+    created_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chat (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session TEXT NOT NULL,

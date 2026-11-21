@@ -60,6 +60,7 @@ DERIV_APP_ID = _get("DERIV_APP_ID", "1089")  # 1089 = Deriv's public test id
 DB_PATH = Path(_get("SIGMA_DB", str(ROOT / "sigma.db")))
 DATABASE_URL = _get("DATABASE_URL") if _get("DATABASE_URL").startswith("postgres") else ""   # postgres://... (e.g. Supabase) -> shared across devices
 APP_PASSWORD = _get("APP_PASSWORD")
+PUSH_CONTACT = _get("PUSH_CONTACT", "mailto:sigma-robot@users.noreply.github.com")  # required by web push
 DB_SCHEMA = _get("DB_SCHEMA", "sigma")    # Postgres schema, so Sigma can share a database safely
 KEEP_SHADOW_DAYS = int(_get("KEEP_SHADOW_DAYS", "21") or 21)   # non-signal scan records older than this are pruned
 MAX_DB_MB = float(_get("MAX_DB_MB", "250") or 250)              # hard ceiling for Sigma's share of the database   # protects the app when it is on the internet

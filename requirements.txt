@@ -7,3 +7,4 @@ websocket-client>=1.7
 anthropic>=0.40
 pytest>=8
 psycopg[binary]>=3.1
+pywebpush>=2.0

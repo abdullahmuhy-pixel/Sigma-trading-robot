@@ -393,6 +393,49 @@ def session_scan_now(body: SessionScanIn):
     return {"started": True}
 
 
+@app.get("/api/push/key")
+def push_key():
+    from . import push
+    return {"public_key": push.public_key()}
+
+
+class PushSubIn(BaseModel):
+    subscription: dict
+    device: str = ""
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: PushSubIn):
+    from . import push
+    try:
+        push.subscribe(body.subscription, body.device)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "devices": len(push.subscriptions())}
+
+
+class PushUnsubIn(BaseModel):
+    endpoint: str
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(body: PushUnsubIn):
+    from . import push
+    push.unsubscribe(body.endpoint)
+    return {"ok": True}
+
+
+@app.post("/api/push/test")
+def push_test():
+    from . import push
+    try:
+        return push.send_all("🔔 Sigma notifications are on",
+                             "You'll get opportunity alerts here even when the app is closed.", url="/#markets",
+                             tag="sigma-test")
+    except Exception as e:
+        raise HTTPException(500, f"push failed: {e}")
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()
