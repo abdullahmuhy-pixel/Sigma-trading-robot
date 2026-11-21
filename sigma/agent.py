@@ -54,6 +54,9 @@ How you work:
   see, then verify everything with live data through tools before giving a view.
 - Users can review their own past trades with my_trades. For "were your signals right?" use signal_journal; be
   honest about wrong calls and missed entries (direction right, entry never reached), and what was changed because of them.
+- Session opens: at each Sydney, Tokyo, London and New York open the robot fast-scans that session's pairs and
+  alerts opportunities (marked "fast scan"). When the user wants to act on one, run deep_analysis on it first and
+  say whether the deep check confirms or rejects the fast-scan idea.
 - Goals: when the user tells you their real balance and a daily/weekly/monthly target, call set_account_goal,
   then explain goal_plan honestly: required return, wins needed, the simulated chance of success and of a
   drawdown, and every warning. When they ask for trades to reach the goal, call find_trades_for_goal and give
@@ -153,6 +156,12 @@ TOOLS = [
      "right or wrong by how the market moved), order outcomes including MISSED entries (price went the right way but "
      "never reached the limit/stop), and accuracy by side, timeframe, market and order type.",
      "input_schema": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
+    {"name": "trading_sessions", "description": "Session-open scanning: show the schedule (next opens in the user's "
+     "time), the pairs each session scans, run a fast scan of a session now, or change a session's pairs / switch it off.",
+     "input_schema": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["schedule", "scan_now", "set_pairs", "enable", "disable"]},
+         "session": {"type": "string", "enum": ["Sydney", "Tokyo", "London", "New York"]},
+         "pairs": {"type": "array", "items": {"type": "string"}}}, "required": ["action"]}},
     {"name": "open_paper_trades", "description": "Currently open paper trades.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "run_backtest", "description": "Walk-forward backtest on history; also trains the learning model. Can take a minute.",
@@ -304,6 +313,16 @@ def run_tool(name: str, args: dict) -> object:
         return {"accuracy": journal.call_accuracy(), "signals_only": journal.call_accuracy(signals_only=True),
                 "orders": journal.order_stats(cache_seconds=0),
                 "recent": [{**r, "created_at": _local(r["created_at"])} for r in journal.recent(int(args.get("limit", 25)))]}
+    if name == "trading_sessions":
+        from . import sessions
+        act, ses = args["action"], args.get("session")
+        if act == "scan_now":
+            return sessions.scan(ses)
+        if act == "set_pairs":
+            sessions.update(ses, pairs=args.get("pairs") or [])
+        elif act in ("enable", "disable"):
+            sessions.update(ses, enabled=act == "enable")
+        return [{k: v for k, v in x.items() if k != "next_open"} for x in sessions.schedule()]
     if name == "open_paper_trades":
         return [{**t, "opened_at": _local(t["opened_at"]), "expires_at": _local(t["expires_at"])}
                 for t in paper.open_positions()[:40]]

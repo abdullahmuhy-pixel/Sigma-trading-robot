@@ -371,3 +371,44 @@ def test_first_ever_demo_trade_is_counted(offline):
     account.update_settings(reset=True)                   # after a reset, older trades are excluded
     sm = account.summary(with_prices=False)
     assert not any(r["id"] == res["trade_id"] for r in sm["open"] + sm["pending"])
+
+
+def test_session_open_times_follow_summer_time():
+    from datetime import date
+    from zoneinfo import ZoneInfo
+    from sigma import sessions
+    sast = ZoneInfo("Africa/Johannesburg")
+    h = lambda s, d: sessions.open_time(s, d).astimezone(sast).strftime("%a %H:%M")  # noqa: E731
+    assert h("London", date(2026, 1, 12)) == "Mon 10:00"        # GMT
+    assert h("London", date(2026, 7, 13)) == "Mon 09:00"         # British summer time
+    assert h("New York", date(2026, 1, 12)) == "Mon 15:00"      # EST
+    assert h("New York", date(2026, 7, 13)) == "Mon 14:00"      # EDT
+    assert h("Tokyo", date(2026, 7, 13)) == "Mon 02:00"         # no summer time
+    assert h("Sydney", date(2026, 11, 23)) == "Sun 22:00"       # Monday 07:00 in Sydney summer
+    assert h("Sydney", date(2026, 7, 13)) == "Sun 23:00"
+
+
+def test_session_scan_alerts_without_deep_or_trades(offline):
+    from datetime import date
+    from sigma import sessions
+    london_open = sessions.open_time("London", date(2026, 11, 23)).timestamp()     # a Monday
+    assert sessions.due(london_open + 60) == ["London"]
+    assert sessions.due(london_open + 3600) == []                                 # window passed
+    sat = sessions.open_time("London", date(2026, 11, 21)).timestamp()
+    assert "London" not in sessions.due(sat + 60)                                  # no weekend scans
+
+    def fake(sym, tf):
+        r = engine.analyze(sym, tf, source="live", journal=False)
+        r.update(is_signal=(sym == "GBPUSD" and tf == "H1"), market_closed=False)
+        return r
+    out = sessions.scan("London", now=london_open + 60, analyze=fake)
+    assert out["opportunities"] == 1 and out["analyses"] == 2 * len(sessions.settings()["London"]["pairs"])
+    al = db.q1("SELECT * FROM alerts WHERE kind='session'")
+    assert al["session"] == "London" and al["symbol"] == "GBPUSD" and "fast scan" in al["body"]
+    a = db.q1("SELECT * FROM analyses WHERE id=?", (al["analysis_id"],))
+    assert a["source"] == "session"                                    # journalled, so the call gets graded
+    assert db.q1("SELECT COUNT(*) n FROM trades")["n"] == 0            # nothing traded until you ask
+    assert "London session open: 1 possible opportunity" in db.q1("SELECT content FROM chat ORDER BY id DESC LIMIT 1")["content"]
+    assert sessions.due(london_open + 120) == []                       # never scans the same open twice
+    sessions.update("London", pairs=["eurusd", "xauusd"])
+    assert sessions.settings()["London"]["pairs"] == ["EURUSD", "XAUUSD"]

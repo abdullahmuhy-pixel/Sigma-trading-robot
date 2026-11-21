@@ -52,6 +52,40 @@ def consider(scan_result: dict) -> dict | None:
     return {"id": aid, "title": title, "body": body}
 
 
+def session_opportunity(session: str, r: dict) -> dict:
+    """A fast-scan opportunity at a session open. Journalled (so its call is graded) but not traded:
+    you decide whether to run the deep analysis."""
+    from . import engine
+    aid = r.get("analysis_id") or engine.record(r, "session")
+    pl = r["plan"]
+    title = f"{session} open: {pl['order_type']} {r['display']} ({r['timeframe']})"
+    tps = " · ".join(f"{t['name']} {_fmt(t['price'])} ({t['p_reach']:.0%})" for t in r.get("take_profits", []))
+    body = (f"**{title}**, {pl['setup_type'].lower()} (fast scan)\n\n"
+            f"Entry {_fmt(r['entry'])} · Stop loss {_fmt(r['sl'])} · {tps} · P(win) {r['probability']:.0%} · "
+            f"expected {r['expectancy']:+.2f}R\n\n{(r.get('explanation') or {}).get('summary', '')}\n\n"
+            f"_Fast scan only - run the deep analysis before acting on it._")
+    now = time.time()
+    al_id = db.insert("alerts", {"created_at": now, "analysis_id": aid, "symbol": r["symbol"], "timeframe": r["timeframe"],
+                                 "order_type": pl["order_type"], "title": title, "body": body, "kind": "session",
+                                 "session": session})
+    return {"id": al_id, "title": title, "symbol": r["symbol"], "timeframe": r["timeframe"]}
+
+
+def session_summary(session: str, pairs: list[str], found: list[dict]) -> None:
+    """One chat message per session open, so every device sees what the robot found."""
+    if found:
+        lines = "\n".join(f"- **{r['plan']['order_type']} {r['display']}** ({r['timeframe']}) at {_fmt(r['entry'])}, "
+                          f"SL {_fmt(r['sl'])}, P(win) {r['probability']:.0%}, expected {r['expectancy']:+.2f}R"
+                          for r in found)
+        text = (f"**{session} session open: {len(found)} possible opportunit{'y' if len(found) == 1 else 'ies'}** "
+                f"(fast scan of {', '.join(pairs)})\n\n{lines}\n\nSay \"deep analyse\" with the pair to confirm one, "
+                f"or tap Deep analysis on the alert.")
+    else:
+        text = (f"**{session} session open:** fast scan of {', '.join(pairs)} found no clear opportunity. "
+                f"I'll keep scanning at every candle close.")
+    db.insert("chat", {"session": "default", "created_at": time.time(), "role": "assistant", "content": text})
+
+
 def since(after_id: int = 0, limit: int = 50) -> list[dict]:
     if after_id:
         return db.q("SELECT * FROM alerts WHERE id>? ORDER BY id", (after_id,))

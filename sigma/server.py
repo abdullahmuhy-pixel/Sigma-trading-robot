@@ -358,6 +358,41 @@ def signal_journal(limit: int = 150):
             "orders": journal.order_stats(cache_seconds=0), "entries": journal.recent(limit)}
 
 
+@app.get("/api/sessions")
+def session_schedule():
+    from . import sessions
+    return sessions.schedule()
+
+
+class SessionIn(BaseModel):
+    session: str
+    pairs: list[str] | None = None
+    enabled: bool | None = None
+
+
+@app.post("/api/sessions")
+def session_update(body: SessionIn):
+    from . import sessions
+    try:
+        sessions.update(body.session, body.pairs, body.enabled)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return sessions.schedule()
+
+
+class SessionScanIn(BaseModel):
+    session: str
+
+
+@app.post("/api/sessions/scan")
+def session_scan_now(body: SessionScanIn):
+    from . import sessions
+    if body.session not in sessions.SESSIONS:
+        raise HTTPException(400, "unknown session")
+    threading.Thread(target=sessions.scan, args=(body.session,), daemon=True).start()
+    return {"started": True}
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

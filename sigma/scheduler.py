@@ -50,6 +50,20 @@ def _scanner() -> None:
         time.sleep(5)
 
 
+def _sessions() -> None:
+    from . import sessions
+    while state["running"]:
+        try:
+            for name in sessions.due():
+                state["scanning"] = f"{name} session open"
+                r = sessions.scan(name)
+                log.info("%s open scan: %d opportunities", name, r["opportunities"])
+        except Exception as e:
+            _err(f"session scan: {e}")
+        state["scanning"] = None
+        time.sleep(30)
+
+
 def _monitor() -> None:
     while state["running"]:
         try:
@@ -75,6 +89,7 @@ def start() -> None:
     threading.Thread(target=_monitor, daemon=True, name="monitor").start()
     if config.AUTO_SCAN:
         threading.Thread(target=_scanner, daemon=True, name="scanner").start()
+        threading.Thread(target=_sessions, daemon=True, name="sessions").start()
 
 
 def stop() -> None:

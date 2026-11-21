@@ -175,11 +175,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 
   <section class="page" id="page-markets"><div class="wrap">
     <div class="tabs">
-      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
+      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="sessions">Sessions</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
       <div class="tab" data-s="perf">Robot performance</div><div class="tab" data-s="learn">Learning</div>
       <div class="tab" data-s="bt">Backtest</div><div class="tab" data-s="cal">Calendar</div>
     </div>
     <div class="sub on" id="s-opps"></div>
+    <div class="sub" id="s-sessions"></div>
     <div class="sub" id="s-journal"></div>
     <div class="sub" id="s-signals"></div>
     <div class="sub" id="s-perf"></div>
@@ -373,8 +374,13 @@ function drawLine(cv,vals,emptyMsg){const ctx=cv.getContext('2d');const w=cv.wid
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
   document.querySelectorAll('.sub').forEach(x=>x.classList.toggle('on',x.id==='s-'+t.dataset.s));loadMarkets()});
 async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.s;try{
- if(on==='opps'){const al=await api('/api/alerts');$('#s-opps').innerHTML=al.length?al.slice().reverse().map(x=>`<div class="box"><div class="muted">${fmtT(x.created_at)}</div>${DOMPurify.sanitize(marked.parse(x.body))}</div>`).join('')
+ if(on==='opps'){const al=await api('/api/alerts');$('#s-opps').innerHTML=al.length?al.slice().reverse().map(x=>`<div class="box"><div class="muted">${fmtT(x.created_at)}${x.kind==='session'?' · '+esc(x.session)+' open · fast scan':' · deep-confirmed'}</div>${DOMPurify.sanitize(marked.parse(x.body))}
+     <button class="${x.kind==='session'?'':'ghost'}" data-deep="${esc(x.symbol)}" data-tf="${esc(x.timeframe)}">${x.kind==='session'?'Run deep analysis':'Open on chart'}</button></div>`).join('')
    :'<p class="muted">The robot scans the watchlist at every candle close. When it finds a signal and a deep analysis confirms it, the opportunity appears here, in the chat, and as a notification (tap 🔔 to allow notifications).</p>'}
+ if(on==='sessions'){const ss=await api('/api/sessions');
+   $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Change the pairs in the chat, e.g. "set the London session pairs to EURUSD, GBPUSD, XAUUSD".</p>
+   <div class="scroll">${table([['Session',r=>`<b>${esc(r.session)}</b>`],['Next open (SAST)',r=>esc(r.next_open_local||'–')],['Pairs',r=>esc(r.pairs.join(', '))],['Last scan',r=>r.last_scan?fmtT(r.last_scan.at)+` · ${r.last_scan.opportunities} found`:'–'],['',r=>`<button class="ghost" data-scan="${esc(r.session)}">Scan now</button>`],['On',r=>r.enabled?'✓':'off']],ss)}</div>`;
+   document.querySelectorAll('[data-scan]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='scanning…';await post('/api/sessions/scan',{session:b.dataset.scan});toast('Scanning the '+esc(b.dataset.scan)+' pairs. Opportunities will appear in Opportunities and the chat.')})}
  if(on==='journal'){const j=await api('/api/journal');const A=j.accuracy,S=j.signal_accuracy,O=j.orders;
    const accRow=(name,x)=>[name,x];
    const resTxt=r=>r==='right'?'<span class="long">✓ right</span>':r==='wrong'?'<span class="short">✗ wrong</span>':r?esc(r):'<span class="muted">grading…</span>';
@@ -402,6 +408,10 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
  if(on==='bt'){const p=await api('/api/backtest/progress');$('#btprog').innerHTML=Object.entries(p).map(([k,v])=>`<div class="kv" style="margin:6px 0">${esc(k)}: ${esc(v.status)} ${v.total?Math.round(100*v.done/v.total)+'%':''}</div>`).join('')}
  if(on==='cal'){const c=await api('/api/calendar');$('#s-cal').innerHTML='<div class="scroll">'+table([['Time (SAST)',r=>fmtT(r.time)],['Ccy',r=>esc(r.currency)],['Impact',r=>`<span class="${r.impact==='High'?'short':''}">${esc(r.impact)}</span>`],['Event',r=>esc(r.title)],['Forecast',r=>esc(r.forecast)],['Previous',r=>esc(r.previous)],['Actual',r=>esc(r.actual)]],c.filter(e=>e.time>Date.now()/1000-86400))+'</div>'}
 }catch(e){document.querySelector('.sub.on').innerHTML='<p class="short">'+esc(e.message)+'</p>'}}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-deep]');if(!b)return;
+  const code=b.dataset.deep,m=SYMS.find(i=>i.symbol===code||i.symbol==='frx'+code||i.symbol==='cry'+code);
+  setSymbol(m?m.symbol:code);$('#tf').value=b.dataset.tf||'H1';location.hash='#chart';
+  if(b.textContent.includes('deep'))setTimeout(()=>$('#analyze').click(),400)});
 $('#btrun').onclick=async()=>{await post('/api/backtest',{symbol:$('#btsym').value,timeframe:$('#bttf').value,bars:+$('#btbars').value});loadMarkets()};
 
 // ---------------- opportunity alerts

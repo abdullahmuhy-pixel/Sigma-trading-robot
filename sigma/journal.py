@@ -57,7 +57,7 @@ def grade_pending(limit: int = 80) -> int:
     """Grade analyses whose outcome is now known. Runs in the background monitor loop."""
     now = time.time()
     rows = db.q("SELECT id, symbol, timeframe, direction, price, entry, sl, bar_time FROM analyses "
-                "WHERE graded_at IS NULL AND source IN ('live','chat') AND bar_time IS NOT NULL "
+                "WHERE graded_at IS NULL AND source IN ('live','chat','session') AND bar_time IS NOT NULL "
                 "AND created_at < ? ORDER BY created_at LIMIT ?", (now - 120, limit))
     groups = defaultdict(list)
     for r in rows:
@@ -94,7 +94,7 @@ def _acc(rows) -> dict:
 def call_accuracy(signals_only: bool = False) -> dict:
     sql = ("SELECT a.direction, a.timeframe, a.symbol, a.call_result, a.is_signal, t.order_type FROM analyses a "
            "LEFT JOIN trades t ON t.analysis_id=a.id AND t.origin='robot' "
-           "WHERE a.call_result IS NOT NULL AND a.source IN ('live','chat')")
+           "WHERE a.call_result IS NOT NULL AND a.source IN ('live','chat','session')")
     if signals_only:
         sql += " AND a.is_signal=1"
     rows = db.q(sql)
@@ -133,5 +133,5 @@ def recent(limit: int = 150) -> list[dict]:
     return db.q("SELECT a.id, a.created_at, a.symbol, a.timeframe, a.source, a.direction, a.is_signal, a.entry, a.sl, "
                 "a.probability, a.call_result, a.call_move_r, a.call_adverse_r, t.order_type, t.status, "
                 "t.r_multiple, t.missed_r, t.lesson FROM analyses a LEFT JOIN trades t ON t.analysis_id=a.id "
-                "AND t.origin='robot' WHERE a.source IN ('live','chat') AND (a.is_signal=1 OR a.source='chat') "
+                "AND t.origin='robot' WHERE a.source IN ('live','chat','session') AND (a.is_signal=1 OR a.source='chat') "
                 "ORDER BY a.created_at DESC LIMIT ?", (limit,))

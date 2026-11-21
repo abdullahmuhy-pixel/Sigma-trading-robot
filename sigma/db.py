@@ -92,7 +92,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     analysis_id INTEGER,
     symbol TEXT, timeframe TEXT, order_type TEXT,
     title TEXT NOT NULL,
-    body TEXT NOT NULL
+    body TEXT NOT NULL,
+    kind TEXT DEFAULT 'scan',       -- scan (deep-confirmed) | session (fast, deep analysis on request)
+    session TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chat (
@@ -134,7 +136,8 @@ MIGRATIONS = [("analyses", "raw_probability", "REAL"), ("trades", "origin", "TEX
               ("trades", "fill_by", "REAL"), ("trades", "demo", "INTEGER DEFAULT 0"),
               ("trades", "risk_amount", "REAL"), ("trades", "units", "REAL"), ("trades", "missed_r", "REAL"),
               ("analyses", "call_result", "TEXT"), ("analyses", "call_move_r", "REAL"),
-              ("analyses", "call_adverse_r", "REAL"), ("analyses", "graded_at", "REAL")]
+              ("analyses", "call_adverse_r", "REAL"), ("analyses", "graded_at", "REAL"),
+              ("alerts", "kind", "TEXT DEFAULT 'scan'"), ("alerts", "session", "TEXT")]
 
 
 def _migrate(execute_fn, pg: bool) -> None:
