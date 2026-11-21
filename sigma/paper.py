@@ -99,6 +99,25 @@ def simulate(direction: int, entry: float, sl: float, tp: float, bars: pd.DataFr
     return None
 
 
+def reach_before_stop(direction: int, entry: float, sl: float, bars: pd.DataFrame,
+                      expires_at: float | None = None) -> float:
+    """Furthest the trade went in its favour (in R) before the stop was hit or time ran out,
+    ignoring any take profit - used to measure how often TP1, TP2, TP3... would have been reached.
+    A bar that touches the stop counts as stopped first (conservative)."""
+    risk = abs(entry - sl)
+    if risk <= 0:
+        return 0.0
+    best = 0.0
+    for ts, b in bars.iterrows():
+        if expires_at is not None and ts.timestamp() >= expires_at:
+            break
+        hi, lo = float(b["high"]), float(b["low"])
+        if (lo <= sl) if direction > 0 else (hi >= sl):
+            break
+        best = max(best, ((hi - entry) if direction > 0 else (entry - lo)) / risk)
+    return best
+
+
 def _resolution_tf(trade_tf: str, age_s: float) -> str:
     for tf, limit in (("M1", 4500 * 60), ("M5", 4500 * 300), ("M15", 4500 * 900), ("H1", 4500 * 3600)):
         if age_s < limit and tf_seconds(tf) <= tf_seconds(trade_tf):

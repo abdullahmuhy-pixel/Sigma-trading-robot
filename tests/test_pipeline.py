@@ -307,3 +307,21 @@ def test_find_trades_for_goal(offline):
     assert t["if_stop_loss_hits"] == pytest.approx(-1_000) and t["if_take_profit_hits"] == pytest.approx(1_000 * config.REWARD_R)
     # 1% of 100,000 USD over the stop distance, in standard lots of 100,000 units
     assert t["lots"] == pytest.approx(1_000 / abs(t["entry"] - t["stop_loss"]) / 100_000, rel=1e-3)
+
+
+def test_deep_tp_odds_blend_history(offline, monkeypatch):
+    from sigma import deep
+    from sigma.symbols import tf_seconds
+    monkeypatch.setattr(market, "history", lambda s, tf, bars=3000: synth(tf_seconds(tf), min(bars, 900), seed=11))
+    deep._replay_cache.clear()
+    out = deep.analyze("EURUSD", "H1")
+    n = out["deep"]["lookalike_history"]["found"]
+    for t in out["take_profits"]:
+        if n:
+            hits = int(t["history_hits"].split("/")[0])
+            assert t["p_reach"] == pytest.approx((t["p_reach_model"] * 30 + hits) / (30 + n))
+    assert set(out["both_sides"]) == {"buy", "sell"}
+    chosen = "buy" if out["direction"] > 0 else "sell"
+    other = "sell" if chosen == "buy" else "buy"
+    b = out["both_sides"]
+    assert (b[chosen]["qualifies"], round(b[chosen]["expected_r"], 9)) >= (b[other]["qualifies"], round(b[other]["expected_r"], 9))

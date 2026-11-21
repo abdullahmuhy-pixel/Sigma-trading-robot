@@ -275,7 +275,7 @@ async function loadChart(){const s=$('#sym').value,tf=$('#tf').value,my=++chartR
   catch(e){if(my===chartReq)$('#status').textContent='chart: '+e.message}}
 function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
   const add=(p,c,t,st=0)=>p&&lines.push(series.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:st,title:t}));
-  add(a.entry,'#5aa9ff',a.order_type);add(a.stop_loss,'#ef4444','SL');add(a.take_profit,'#22c55e','TP');(a.key_levels||[]).forEach(p=>add(p,'#3a4656','',2))}
+  add(a.entry,'#5aa9ff',a.order_type);add(a.stop_loss,'#ef4444','SL');(a.take_profits||[]).forEach(t=>add(t.price,'#22c55e',t.name+' '+Math.round(t.p_reach*100)+'%'));(a.key_levels||[]).forEach(p=>add(p,'#3a4656','',2))}
 $('#tf').onchange=loadChart;
 $('#analyze').onclick=async()=>{const b=$('#analyze');b.disabled=true;const t0=Date.now();
   const tick=setInterval(()=>$('#status').textContent=`deep analysis… ${Math.round((Date.now()-t0)/1000)} s (about 1-2 minutes)`,1000);
@@ -289,8 +289,12 @@ function showCard(a){const ex=a.explanation||{},d=a.deep||{},buy=a.direction==='
     <div><span class="big ${buy?'long':'short'}">${esc(a.order_type)}</span> <span class="big">${esc(a.symbol)}</span> <span class="muted">${a.timeframe} · ${esc(a.setup_type)} · ${esc(a.regime)}</span></div>
     <div class="${a.is_signal?'long':'muted'}" style="font-weight:700">${a.is_signal?'CONFIRMED SIGNAL':'NOT A SIGNAL - lean only'}</div></div>
   ${a.blocked_reason?`<p class="warn">Held back: ${esc(a.blocked_reason)}</p>`:''}
-  <div class="grid4">${kv('Entry',fx(a.entry))}${kv('Stop loss',fx(a.stop_loss),'short')}${kv('Take profit',fx(a.take_profit),'long')}
-   ${kv('Reward : risk',rr?rr.toFixed(1)+' : 1':'–')}${kv('P(win)',pct(a.p_win_calibrated))}${kv('Break-even win rate',rr?pct(1/(1+rr)):'–')}${kv('Expected R',fx(a.expected_R_after_costs,2),cls(a.expected_R_after_costs))}</div>
+  <div class="grid4">${kv('Entry',fx(a.entry))}${kv('Stop loss',fx(a.stop_loss),'short')}${kv('P(win) at main TP',pct(a.p_win_calibrated))}${kv('Expected R',fx(a.expected_R_after_costs,2),cls(a.expected_R_after_costs))}</div>
+  <div class="box"><h4>Take profits - choose where to close</h4><div class="scroll">${table([['TP',t=>`<b>${t.name}</b>${t.main?' <span class="muted">(main)</span>':''}`],['Price',t=>`<span class="long">${fx(t.price)}</span>`],['Reward',t=>t.r+'R'],
+     ['Chance to reach',t=>`<b>${pct(t.p_reach)}</b>`],['Expected R if you close here',t=>`<span class="${cls(t.expected_r_if_closed_here)}">${fx(t.expected_r_if_closed_here,2)}</span>`],['Past look-alikes that got there',t=>t.history_hits||'–']],a.take_profits||[])}</div>
+   <p class="muted">Chance to reach = probability price gets to that level before the stop loss. Further targets pay more but are reached less often.</p></div>
+  ${a.both_sides?`<div class="box"><h4>Buy case vs sell case</h4><div class="scroll">${table([['Side',r=>`<b class="${r[0]==='buy'?'long':'short'}">${r[0].toUpperCase()}</b>${(r[0]==='buy')===buy?' ✓ chosen':''}`],['Order',r=>esc(r[1].order_type)],['Entry',r=>fx(r[1].entry)],['P(win)',r=>pct(r[1].p_win)],['Expected R',r=>`<span class="${cls(r[1].expected_r)}">${fx(r[1].expected_r,2)}</span>`],['TP odds',r=>Object.entries(r[1].tp_odds||{}).map(([k,v])=>k+' '+pct(v)).join(' · ')],['Passes checks',r=>r[1].qualifies?'yes':esc(r[1].blocked||'no')]],Object.entries(a.both_sides))}</div>
+   <p class="muted">Sigma builds a complete trade for both directions and picks the one the evidence supports. It never starts from an assumed direction.</p></div>`:''}
   <div class="box"><h4>Why ${buy?'buy':'sell'}</h4><p>${esc(ex.summary)}</p>
     ${(ex.for||[]).map(r=>`<div class="reason"><b class="long">+ ${esc(r.factor)}</b><span>${esc(r.detail)}</span></div>`).join('')}
     ${(ex.against||[]).length?`<h4 style="margin-top:12px">Against it</h4>`+ex.against.map(r=>`<div class="reason"><b class="short">− ${esc(r.factor)}</b><span>${esc(r.detail)}</span></div>`).join(''):''}</div>

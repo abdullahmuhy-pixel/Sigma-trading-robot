@@ -321,3 +321,47 @@ def test_goal_plan_numbers_and_warnings():
     goals.log_result(120, "EURUSD win")
     pl = goals.plan()
     assert pl["progress_this_period"] == 120 and pl["remaining"] == 380 and pl["goal"]["balance"] == 1_120
+
+
+def test_open_minded_takes_the_other_side_when_one_is_blocked():
+    """The robot must not fixate on one direction: if the stronger-looking side fails a check,
+    the other side is judged on its own merits instead of answering 'no trade'."""
+    from sigma import engine
+    m = learning.Model()
+    m.bias = 2.0                      # make both sides attractive so only the filter decides
+    m.meta["calib"] = [0.0, 1.0]
+    df = gbm(420, seed=4, drift=0.002)
+    first = engine.evaluate("EURUSD", "H1", df, model=m, stats={})
+    assert first["is_signal"]
+    gate = {first["setup_key"]: {"n": 50, "shrunk_expectancy": -0.5}}   # switch that side off
+    second = engine.evaluate("EURUSD", "H1", df, model=m, stats=gate)
+    assert second["direction"] == -first["direction"] and second["is_signal"]
+    assert set(second["both_sides"]) == {"buy", "sell"}
+    assert second["both_sides"]["buy" if first["direction"] > 0 else "sell"]["blocked"]
+
+
+def test_take_profit_odds():
+    from sigma import engine, plan
+    base = 1 / (1 + config.REWARD_R)
+    for r in (1, 2, 3, 4):   # no edge: the fair random-walk chance of +r before -1
+        assert plan.tp_probability(base, r) == pytest.approx(1 / (1 + r))
+    assert plan.tp_probability(0.45, config.REWARD_R) == pytest.approx(0.45)
+    res = engine.evaluate("EURUSD", "H1", gbm(420, seed=2, drift=0.001))
+    tps = res["take_profits"]
+    assert [t["name"] for t in tps] == ["TP1", "TP2", "TP3", "TP4"]
+    assert all(a["p_reach"] > b["p_reach"] for a, b in zip(tps, tps[1:]))      # further = less likely
+    d, risk = res["direction"], abs(res["entry"] - res["sl"])
+    for t in tps:
+        assert t["price"] == pytest.approx(res["entry"] + d * t["r"] * risk)
+    main = next(t for t in tps if t["main"])
+    assert main["p_reach"] == pytest.approx(res["probability"]) and main["price"] == pytest.approx(res["tp"])
+
+
+def test_reach_before_stop():
+    from sigma.paper import reach_before_stop
+    idx = pd.date_range("2025-01-01", periods=4, freq="1h", tz="UTC")
+    bars = pd.DataFrame({"open": [100, 101, 103, 104], "high": [101, 103.5, 104.2, 106],
+                         "low": [99.5, 100.5, 102, 97], "close": [101, 103, 104, 98]}, index=idx)
+    # long from 100, stop 98 (risk 2): best high before the stop bar is 104.2 -> 2.1R
+    assert reach_before_stop(1, 100, 98, bars) == pytest.approx(2.1)
+    assert reach_before_stop(-1, 100, 102, bars) == pytest.approx(0.25)   # short: stopped on bar 1, best low 99.5

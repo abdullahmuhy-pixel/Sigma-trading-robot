@@ -61,30 +61,47 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     comps["news"] = float((news or {}).get("score", 0.0))
     regime = tech["regime"]
 
-    raw_long = m.prob(comps, regime, 1)
-    raw_short = m.prob(comps, regime, -1)
-    direction = 1 if raw_long >= raw_short else -1
-    raw_p = max(raw_long, raw_short)
-    p_long, p_short = m.calibrate(raw_long), m.calibrate(raw_short)
-    p = m.calibrate(raw_p)
-
-    order = plan.order(direction, tech["price"], tech["atr"], tech["context"], comps, regime)
-    entry, sl, tp = order["entry"], order["sl"], order["tp"]
-    risk = abs(entry - sl) or 1e-12
-    cost_r = cost_in_price(inst, entry) / risk
-    exp_r = m.expectancy(p) - cost_r
-
-    setup_key = f"{inst.name}|{tf}|{regime}|{'L' if direction > 0 else 'S'}"
-    blocked = None
+    # Open-minded: build the COMPLETE case for both a buy and a sell - order plan, costs,
+    # filters, take-profit odds - and only then let the facts pick the side.
+    event_block = None
     if events and events.get("blocked"):
         ev = events["blocking_event"]
-        blocked = f"high-impact event: {ev['currency']} {ev['title']}"
-    g = learning.gated(setup_key, stats)
-    if g:
-        blocked = f"setup switched off by learning ({g['n']} signals, {g['shrunk_expectancy']:+.2f}R)"
-    if abs(raw_long - raw_short) < 1e-6:   # evidence perfectly balanced: no side is preferred
+        event_block = f"high-impact event: {ev['currency']} {ev['title']}"
+    sides = {}
+    for d in (1, -1):
+        raw_d = m.prob(comps, regime, d)
+        p_d = m.calibrate(raw_d)
+        order_d = plan.order(d, tech["price"], tech["atr"], tech["context"], comps, regime)
+        risk_d = abs(order_d["entry"] - order_d["sl"]) or 1e-12
+        cost_d = cost_in_price(inst, order_d["entry"]) / risk_d
+        exp_d = m.expectancy(p_d) - cost_d
+        key_d = f"{inst.name}|{tf}|{regime}|{'L' if d > 0 else 'S'}"
+        block_d = event_block
+        g = learning.gated(key_d, stats)
+        if g:
+            block_d = f"setup switched off by learning ({g['n']} signals, {g['shrunk_expectancy']:+.2f}R)"
+        plan.add_take_profits(order_d, p_d, cost_d)
+        sides[d] = {"direction": d, "raw_p": raw_d, "p": p_d, "order": order_d, "expectancy": exp_d,
+                    "cost_r": cost_d, "setup_key": key_d, "blocked": block_d,
+                    "qualifies": p_d >= config.MIN_PROBABILITY and exp_d >= config.MIN_EXPECTANCY_R and not block_d}
+    balanced = abs(sides[1]["raw_p"] - sides[-1]["raw_p"]) < 1e-6
+    # a side that passes every check beats one that does not; then the better expected value wins
+    best = max(sides.values(), key=lambda x: (x["qualifies"], round(x["expectancy"], 9)))
+    if not sides[1]["qualifies"] and not sides[-1]["qualifies"] and abs(sides[1]["expectancy"] - sides[-1]["expectancy"]) < 1e-9:
+        best = max(sides.values(), key=lambda x: x["raw_p"])
+    direction = best["direction"]
+    order, p, raw_p, exp_r, cost_r = best["order"], best["p"], best["raw_p"], best["expectancy"], best["cost_r"]
+    entry, sl, tp = order["entry"], order["sl"], order["tp"]
+    setup_key, blocked = best["setup_key"], best["blocked"]
+    if balanced:   # evidence perfectly balanced: no side is preferred
         blocked = blocked or "no directional edge: buy and sell evidence are equal"
-    is_signal = (p >= config.MIN_PROBABILITY and exp_r >= config.MIN_EXPECTANCY_R and not blocked)
+    is_signal = best["qualifies"] and not balanced
+    p_long, p_short = sides[1]["p"], sides[-1]["p"]
+    both = {("buy" if d > 0 else "sell"): {
+        "order_type": x["order"]["order_type"], "entry": x["order"]["entry"], "sl": x["order"]["sl"],
+        "take_profits": x["order"]["take_profits"], "p_win": x["p"], "expected_r": x["expectancy"],
+        "setup_type": x["order"]["setup_type"], "qualifies": x["qualifies"], "blocked": x["blocked"]}
+        for d, x in sides.items()}
 
     raw = sum(learning.PRIOR_BASE[k] * comps[k] for k in learning.PRIOR_BASE) / sum(learning.PRIOR_BASE.values())
     notes = list(tech["notes"]) + list((fund or {}).get("notes", []))
@@ -98,7 +115,8 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
         "is_signal": bool(is_signal), "blocked_reason": blocked, "setup_key": setup_key,
         "components": comps, "context": tech["context"], "notes": notes,
         "fundamental": fund, "news": news, "events": events,
-        "provider": df.attrs.get("provider"), "plan": order,
+        "provider": df.attrs.get("provider"), "plan": order, "both_sides": both,
+        "take_profits": order["take_profits"], "_sides": sides,
     }
     res["explanation"] = plan.explain(res, m.weights())
     return res

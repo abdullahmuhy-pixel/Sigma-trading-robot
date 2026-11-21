@@ -15,7 +15,7 @@ import pandas as pd
 from . import config, db, learning
 from .data import market
 from .engine import cost_in_price, evaluate, resample_htf
-from .paper import fill_index, simulate
+from .paper import fill_index, reach_before_stop, simulate
 from .symbols import resolve, tf_seconds
 
 log = logging.getLogger("sigma.backtest")
@@ -97,6 +97,7 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
         if out is None:
             break  # ran out of future data
         trade = {**out, "direction": d, "entry": entry, "sl": sl, "tp": tp, "opened_at": opened,
+                 "reach_r": reach_before_stop(d, entry, sl, future, expires),
                  "expires_at": expires, "res": res}
         pending.append(trade)
         _progress[key]["done"] = i - WINDOW

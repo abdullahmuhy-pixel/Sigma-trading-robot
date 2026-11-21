@@ -78,6 +78,30 @@ def order(direction: int, price: float, atr: float, ctx: dict, comps: dict, regi
             "pending_bars": PENDING_BARS if kind != "MARKET" else 0}
 
 
+def tp_probability(p_at_main: float, r: float) -> float:
+    """Chance of reaching +r R before the stop, from the calibrated chance of reaching the main
+    target (REWARD_R). With no edge, the chance of hitting +r before -1 is 1/(1+r) (a fair random
+    walk); the robot's measured edge (in log-odds) is carried over to every target."""
+    import math
+    lg = lambda x: math.log(min(max(x, 1e-6), 1 - 1e-6) / (1 - min(max(x, 1e-6), 1 - 1e-6)))  # noqa: E731
+    edge = lg(p_at_main) - lg(1 / (1 + config.REWARD_R))
+    return 1 / (1 + math.exp(-(lg(1 / (1 + r)) + edge)))
+
+
+def add_take_profits(order: dict, p_main: float, cost_r: float = 0.0) -> dict:
+    """TP1..TPn at config.TP_LEVELS multiples of risk, each with its chance of being reached
+    before the stop loss, and the expected R of closing the whole trade there."""
+    d = 1 if order["side"] == "BUY" else -1
+    tps = []
+    for i, r in enumerate(sorted(config.TP_LEVELS), 1):
+        pr = tp_probability(p_main, r)
+        tps.append({"name": f"TP{i}", "r": r, "price": order["entry"] + d * r * order["risk"],
+                    "p_reach": pr, "expected_r_if_closed_here": pr * r - (1 - pr) - cost_r,
+                    "main": abs(r - config.REWARD_R) < 1e-9})
+    order["take_profits"] = tps
+    return tps
+
+
 def _setup_type(d: int, comps: dict) -> str:
     c = {k: comps.get(k, 0) * d for k in comps}
     if c.get("divergence", 0) > 0 and c.get("trend", 0) < 0:

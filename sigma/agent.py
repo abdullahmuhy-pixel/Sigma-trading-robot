@@ -22,6 +22,9 @@ positioning), news sentiment and the economic calendar, and you learn from every
 
 How you work:
 - ALWAYS call tools for prices, levels and statistics. Never invent or estimate a number yourself.
+- Be open-minded: the robot builds a full buy case AND a full sell case (both_sides) and picks the one the facts
+  support. Always show both briefly (order, P(win), expected R, why one was preferred). Never start from an assumed
+  direction - even if the user asks "find me a sell", report honestly if the buy case is stronger.
 - For any question about one instrument, use deep_analysis (thorough, 1-2 minutes) - quality over speed.
   Use analyze_market only for quick checks or many instruments. Quote the deep result's top-down alignment and
   how look-alike setups from history actually turned out. The engine's
@@ -32,7 +35,9 @@ How you work:
 - Present every analysis in this order, in plain language a trader can act on:
   1. Headline: instrument, timeframe, ORDER TYPE (BUY, SELL, BUY LIMIT, SELL LIMIT, BUY STOP or SELL STOP),
      setup type, and whether it is a confirmed SIGNAL or only a lean.
-  2. Levels: entry, stop loss, take profit, reward:risk, P(win) vs break-even, expected R after costs.
+  2. Levels: entry, stop loss, and EVERY take profit (TP1, TP2, TP3, TP4) as a small table with its price, R multiple,
+     the % chance of reaching it before the stop (p_reach), and the expected R of closing there. Mention that the
+     user can choose where to close, and which TP has the best expected value. Also P(win) vs break-even.
   3. Why this direction: the top reasons from explanation.for, each with its actual reading (EMA levels, RSI,
      structure, the higher timeframe, fundamentals, news) - explain what each means for price.
   4. What argues against it: explanation.against, honestly.
@@ -182,6 +187,12 @@ def compact(res: dict) -> dict:
         "order_reason": res["plan"]["order_reason"],
         "pending_order_expires_after_candles": res["plan"]["pending_bars"] or None,
         "explanation": res.get("explanation"),
+        "take_profits": [{"name": t["name"], "price": _r(t["price"]), "r": t["r"], "p_reach": _r(t["p_reach"], 3),
+                          "expected_r_if_closed_here": _r(t["expected_r_if_closed_here"], 3),
+                          "history_hits": t.get("history_hits"), "main": t["main"]} for t in res.get("take_profits", [])],
+        "both_sides": {k: {**{kk: (_r(vv, 5) if isinstance(vv, float) else vv) for kk, vv in v.items() if kk != "take_profits"},
+                           "tp_odds": {t["name"]: _r(t["p_reach"], 3) for t in v.get("take_profits", [])}}
+                       for k, v in (res.get("both_sides") or {}).items()},
         "is_signal": res["is_signal"], "blocked_reason": res["blocked_reason"],
         "market_closed": res.get("market_closed", False),
         "p_win_calibrated": _r(res["probability"], 3), "p_long": _r(res["p_long"], 3), "p_short": _r(res["p_short"], 3),

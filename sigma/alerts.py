@@ -22,8 +22,9 @@ def message(r: dict) -> tuple[str, str]:
     hist = (f" Similar past setups on this market: {look['found']}, won {look['win_rate']:.0%}."
             if look.get("found") and look.get("win_rate") is not None else "")
     body = (f"**Opportunity found: {title}**, {pl['setup_type'].lower()}\n\n"
-            f"Entry {_fmt(r['entry'])} · Stop loss {_fmt(r['sl'])} · Take profit {_fmt(r['tp'])} · "
-            f"P(win) {r['probability']:.0%} · expected {r['expectancy']:+.2f}R"
+            f"Entry {_fmt(r['entry'])} · Stop loss {_fmt(r['sl'])} · "
+            + " · ".join(f"{t['name']} {_fmt(t['price'])} ({t['p_reach']:.0%})" for t in r.get("take_profits", []))
+            + f" · expected {r['expectancy']:+.2f}R"
             f"{' · higher timeframes agree ' + d['higher_tf_alignment'] if d.get('higher_tf_alignment') else ''}\n\n"
             f"{ex.get('summary', '')}{hist}\n\n{ex.get('invalidation', '')}\n\n"
             f"_Paper-traded on the demo account. Ask me \"explain the {r['display']} alert\" for the full breakdown._")
