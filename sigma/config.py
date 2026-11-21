@@ -26,7 +26,9 @@ _load_dotenv()
 
 
 def _get(name: str, default: str = "") -> str:
-    return os.environ.get(name, default)
+    v = os.environ.get(name, default).strip()
+    # hosting forms sometimes force a value: treat placeholders as "not set"
+    return default if v.lower() in ("none", "-", "n/a", "na", "null", "empty", "skip") else v
 
 
 def _float(name: str, default: float) -> float:
@@ -55,7 +57,7 @@ DERIV_APP_ID = _get("DERIV_APP_ID", "1089")  # 1089 = Deriv's public test id
 
 # --- Storage -----------------------------------------------------------------
 DB_PATH = Path(_get("SIGMA_DB", str(ROOT / "sigma.db")))
-DATABASE_URL = _get("DATABASE_URL")   # postgres://... (e.g. Supabase) -> shared across devices
+DATABASE_URL = _get("DATABASE_URL") if _get("DATABASE_URL").startswith("postgres") else ""   # postgres://... (e.g. Supabase) -> shared across devices
 APP_PASSWORD = _get("APP_PASSWORD")   # protects the app when it is on the internet
 
 # --- Display -----------------------------------------------------------------
