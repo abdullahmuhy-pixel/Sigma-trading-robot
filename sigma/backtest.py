@@ -29,7 +29,7 @@ def progress() -> dict:
 
 
 def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
-        refit_every: int = 150, step: int = 1, store: bool = True) -> dict:
+        refit_every: int = 150, step: int = 1, store: bool = True, yield_s: float = 0.0) -> dict:
     inst = resolve(symbol)
     tf = tf.upper()
     if df is None:
@@ -50,6 +50,8 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
     times = [ts.timestamp() for ts in df.index]
 
     for i in range(WINDOW, len(df) - 1, step):
+        if yield_s:
+            time.sleep(yield_s)   # let the web server answer you first (tiny CPU on free hosting)
         window = df.iloc[i - WINDOW + 1:i + 1]
         now = times[i] + secs     # analysis happens when bar i closes
 

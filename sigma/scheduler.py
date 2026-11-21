@@ -28,9 +28,10 @@ def scan(tf: str, symbols: list[str] | None = None) -> list[dict]:
             out.append(r)
             if r.get("is_signal"):
                 from . import alerts
-                alerts.consider(r)
+                alerts.enqueue(r)        # deep check runs in the background queue
         except Exception as e:
             _err(f"scan {s} {tf}: {e}")
+        time.sleep(0.05)                 # give the app a turn between markets
     state["scanning"] = None
     state["last_scan"][tf] = time.time()
     return out

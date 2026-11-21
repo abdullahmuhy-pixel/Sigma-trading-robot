@@ -31,6 +31,30 @@ def message(r: dict) -> tuple[str, str]:
     return title, body
 
 
+_queue: "queue.Queue[dict]" = None  # type: ignore
+_worker = None
+
+
+def enqueue(scan_result: dict) -> None:
+    """Deep-check a scan signal in the background, one at a time, so scanning never waits for it."""
+    import queue
+    import threading
+    global _queue, _worker
+    if _queue is None:
+        _queue = queue.Queue()
+    if _worker is None or not _worker.is_alive():
+        def run():
+            while True:
+                r = _queue.get()
+                try:
+                    consider(r)
+                except Exception as e:
+                    log.warning("deep check failed: %s", e)
+        _worker = threading.Thread(target=run, daemon=True, name="deep-checks")
+        _worker.start()
+    _queue.put(scan_result)
+
+
 def consider(scan_result: dict) -> dict | None:
     """Called for every scan result. Returns the alert if one was raised."""
     if not scan_result.get("is_signal") or not scan_result.get("analysis_id"):

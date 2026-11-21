@@ -31,13 +31,13 @@ def _cos(a: np.ndarray, b: np.ndarray) -> float:
     return float(a @ b / (na * nb)) if na and nb else 0.0
 
 
-def replay(symbol: str, tf: str, bars: int = 2000) -> list[dict]:
+def replay(symbol: str, tf: str, bars: int = 1500) -> list[dict]:
     key = f"{symbol}:{tf}"
     hit = _replay_cache.get(key)
     if hit and time.time() - hit[0] < 3600:
         return hit[1]
     df = market.history(symbol, tf, bars + backtest.WINDOW)
-    rep = backtest.run(symbol, tf, df=df, store=False, step=2)
+    rep = backtest.run(symbol, tf, df=df, store=False, step=3, yield_s=0.003)
     res = rep.get("_results", [])
     _replay_cache[key] = (time.time(), res)
     return res

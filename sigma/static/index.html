@@ -403,35 +403,8 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
    :'<p class="muted">The robot scans the watchlist at every candle close and fast-scans each session open. Opportunities appear here, in the chat, and as a phone notification.</p>');
    const pt=$('#pushtest');if(pt)pt.onclick=async()=>{await ensurePush();const r=await post('/api/push/test',{});toast(r.sent?`Test sent to ${r.sent} device${r.sent>1?'s':''}`:'No device received it. Try turning notifications off and on again.')};
    const pa=$('#pushask');if(pa)pa.onclick=()=>{sessionStorage.removeItem('sigma_notif_later');askNotifications()}}
- if(on==='watch'){const w=await api('/api/watchlist');const nameOf=c=>(SYMS.find(i=>i.symbol===c||i.symbol==='frx'+c||i.symbol==='cry'+c)||{}).name||c;
-   $('#s-watch').innerHTML=`<div class="box"><h4>Background watchlist</h4>
-     <p class="muted">These are the <b>only</b> markets the robot scans on its own, at every candle close on the timeframes below, and the only ones that send you opportunity notifications. Anything else is analysed only when you ask. Fewer markets and timeframes = fewer data calls.</p>
-     <label class="switch"><input type="checkbox" id="w_on" ${w.enabled?'checked':''}> Background scanning ${w.enabled?'<b class="long">on</b>':'<b class="short">off</b>'}</label>
-     <h4 style="margin-top:14px">Markets (${w.symbols.length})</h4>
-     <div class="chips">${w.symbols.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-wrm="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No markets: nothing will be scanned.</span>'}</div>
-     <button id="w_add">+ Add market</button>
-     <h4 style="margin-top:16px">Timeframes</h4>
-     <div class="chips">${['M5','M15','M30','H1','H4','D1'].map(t=>`<button class="tfb ${w.timeframes.includes(t)?'on':''}" data-wtf="${t}">${t}</button>`).join('')}</div>
-     <p class="muted">About <b>${w.scans_per_day.toLocaleString('en-ZA')}</b> quick analyses a day (markets × candle closes; forex markets are skipped while closed). Each costs a few price-data calls and no Claude usage. Deep checks run only on signals.</p></div>`;
-   const save=async b=>{try{await post('/api/watchlist',b);loadMarkets()}catch(e){toast(esc(e.message))}};
-   $('#w_on').onchange=e=>save({enabled:e.target.checked});
-   $('#w_add').onclick=()=>openPicker((code,name)=>{save({add:[code]});toast('Added '+esc(name))});
-   document.querySelectorAll('[data-wrm]').forEach(b=>b.onclick=()=>save({remove:[b.dataset.wrm]}));
-   document.querySelectorAll('[data-wtf]').forEach(b=>b.onclick=()=>{const cur=[...document.querySelectorAll('[data-wtf].on')].map(x=>x.dataset.wtf);
-     const nxt=b.classList.contains('on')?cur.filter(t=>t!==b.dataset.wtf):[...cur,b.dataset.wtf];if(!nxt.length){toast('Keep at least one timeframe');return}save({timeframes:nxt})})}
- if(on==='sessions'){const ss=await api('/api/sessions');
-   $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Tap ✕ to remove a pair, <b>+ Add</b> to add one, or switch a session off.</p>
-   ${ss.map(r=>`<div class="box"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
-     <div><b style="font-size:16px">${esc(r.session)}</b> <span class="muted">next open ${esc(r.next_open_local||'–')} SAST${r.last_scan?' · last scan '+fmtT(r.last_scan.at)+', '+r.last_scan.opportunities+' found':''}</span></div>
-     <div style="display:flex;gap:8px;align-items:center"><label class="switch"><input type="checkbox" data-son="${esc(r.session)}" ${r.enabled?'checked':''}> on</label><button class="ghost" data-scan="${esc(r.session)}">Scan now</button></div></div>
-     <div class="chips">${r.pairs.map(c=>`<span class="chip">${esc(c)}<b data-srm="${esc(r.session)}" data-sym="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No pairs</span>'}
-     <button class="ghost" data-sadd="${esc(r.session)}">+ Add</button></div></div>`).join('')}`;
-   const sv=async b=>{try{await post('/api/sessions',b);loadMarkets()}catch(e){toast(esc(e.message))}};
-   const pairsOf=n=>ss.find(x=>x.session===n).pairs;
-   document.querySelectorAll('[data-son]').forEach(b=>b.onchange=()=>sv({session:b.dataset.son,enabled:b.checked}));
-   document.querySelectorAll('[data-srm]').forEach(b=>b.onclick=()=>sv({session:b.dataset.srm,pairs:pairsOf(b.dataset.srm).filter(p=>p!==b.dataset.sym)}));
-   document.querySelectorAll('[data-sadd]').forEach(b=>b.onclick=()=>openPicker(code=>sv({session:b.dataset.sadd,pairs:[...pairsOf(b.dataset.sadd),code.replace(/^(frx|cry)/,'')]})));
-   document.querySelectorAll('[data-scan]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='scanning…';await post('/api/sessions/scan',{session:b.dataset.scan});toast('Scanning the '+esc(b.dataset.scan)+' pairs. Opportunities will appear in Opportunities and the chat.')})}
+ if(on==='watch'){WL=await api('/api/watchlist');renderWatch()}
+ if(on==='sessions'){SS=await api('/api/sessions');renderSessions()}
  if(on==='journal'){const j=await api('/api/journal');const A=j.accuracy,S=j.signal_accuracy,O=j.orders;
    const accRow=(name,x)=>[name,x];
    const resTxt=r=>r==='right'?'<span class="long">✓ right</span>':r==='wrong'?'<span class="short">✗ wrong</span>':r?esc(r):'<span class="muted">grading…</span>';
@@ -459,6 +432,53 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
  if(on==='bt'){const p=await api('/api/backtest/progress');$('#btprog').innerHTML=Object.entries(p).map(([k,v])=>`<div class="kv" style="margin:6px 0">${esc(k)}: ${esc(v.status)} ${v.total?Math.round(100*v.done/v.total)+'%':''}</div>`).join('')}
  if(on==='cal'){const c=await api('/api/calendar');$('#s-cal').innerHTML='<div class="scroll">'+table([['Time (SAST)',r=>fmtT(r.time)],['Ccy',r=>esc(r.currency)],['Impact',r=>`<span class="${r.impact==='High'?'short':''}">${esc(r.impact)}</span>`],['Event',r=>esc(r.title)],['Forecast',r=>esc(r.forecast)],['Previous',r=>esc(r.previous)],['Actual',r=>esc(r.actual)]],c.filter(e=>e.time>Date.now()/1000-86400))+'</div>'}
 }catch(e){document.querySelector('.sub.on').innerHTML='<p class="short">'+esc(e.message)+'</p>'}}
+// ---------------- watchlist & session editors: change on screen instantly, save in the background
+let WL=null,SS=null;
+const SPD={M5:288,M15:96,M30:48,H1:24,H4:6,D1:1};
+const nameOf=c=>(SYMS.find(i=>i.symbol===c||i.symbol==='frx'+c||i.symbol==='cry'+c)||{}).name||c;
+const canon=c=>c.replace(/^(frx|cry)/,'');
+function renderWatch(){const w=WL;if(!w)return;const spd=w.symbols.length*w.timeframes.reduce((a,t)=>a+(SPD[t]||0),0);
+  $('#s-watch').innerHTML=`<div class="box"><h4>Background watchlist</h4>
+   <p class="muted">These are the <b>only</b> markets the robot scans on its own, at every candle close on the timeframes below, and the only ones that send you opportunity notifications. Anything else is analysed only when you ask.</p>
+   <label class="switch"><input type="checkbox" id="w_on" ${w.enabled?'checked':''}> Background scanning ${w.enabled?'<b class="long">on</b>':'<b class="short">off</b>'}</label>
+   <h4 style="margin-top:14px">Markets (${w.symbols.length})</h4>
+   <div class="chips">${w.symbols.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-wrm="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No markets: nothing will be scanned.</span>'}</div>
+   <button id="w_add">+ Add market</button>
+   <h4 style="margin-top:16px">Timeframes <span class="muted" style="text-transform:none;letter-spacing:0">(tick as many as you like)</span></h4>
+   <div class="chips">${['M5','M15','M30','H1','H4','D1'].map(t=>`<button class="tfb ${w.timeframes.includes(t)?'on':''}" data-wtf="${t}">${t}</button>`).join('')}
+     <button class="ghost tfb" id="w_all">All</button></div>
+   <p class="muted">About <b>${spd.toLocaleString('en-ZA')}</b> quick analyses a day (markets × candle closes; forex is skipped while closed). They use free price data only, no Claude. ${w.timeframes.includes('M5')&&w.symbols.length>10?'<span class="warn">M5 on many markets keeps the robot busy around the clock on the free server; the app can feel slower.</span>':''}</p>
+   <p class="muted" id="w_state"></p></div>`;
+  $('#w_on').onchange=e=>saveWatch(w=>({...w,enabled:e.target.checked}),{enabled:e.target.checked});
+  $('#w_add').onclick=()=>openPicker((code,name)=>{const c=canon(code);if(WL.symbols.includes(c)){toast(esc(name)+' is already on the list');return}
+    saveWatch(w=>({...w,symbols:[...w.symbols,c]}),{add:[code]});toast('Added '+esc(name))});
+  document.querySelectorAll('[data-wrm]').forEach(b=>b.onclick=()=>{const c=b.dataset.wrm;saveWatch(w=>({...w,symbols:w.symbols.filter(x=>x!==c)}),{remove:[c]})});
+  document.querySelectorAll('[data-wtf]').forEach(b=>b.onclick=()=>{const t=b.dataset.wtf,cur=WL.timeframes;
+    const nxt=cur.includes(t)?cur.filter(x=>x!==t):[...cur,t];if(!nxt.length){toast('Keep at least one timeframe');return}
+    const ordered=['M5','M15','M30','H1','H4','D1'].filter(x=>nxt.includes(x));saveWatch(w=>({...w,timeframes:ordered}),{timeframes:ordered})});
+  $('#w_all').onclick=()=>{const all=['M5','M15','M30','H1','H4','D1'];saveWatch(w=>({...w,timeframes:all}),{timeframes:all})}}
+let wSeq=0;
+async function saveWatch(change,body){const before=WL,my=++wSeq;WL=change(WL);renderWatch();const st=$('#w_state');if(st)st.textContent='saving…';
+  try{const r=await post('/api/watchlist',body);if(my===wSeq){WL=r;renderWatch();const s2=$('#w_state');if(s2){s2.textContent='saved ✓';setTimeout(()=>{if(s2.textContent==='saved ✓')s2.textContent=''},1500)}}}
+  catch(e){if(my===wSeq){WL=before;renderWatch()}toast('Not saved: '+esc(e.message))}}
+function renderSessions(){const ss=SS;if(!ss)return;
+  $('#s-sessions').innerHTML=`<p class="muted">At each session open the robot runs a <b>fast</b> scan of that session's pairs (M15 and H1). Opportunities are sent to you as alerts; the deep analysis only runs when you tap it. Times are SAST and follow each city's summer time automatically. Tap ✕ to remove a pair, <b>+ Add</b> to add one, or switch a session off.</p>
+   ${ss.map(r=>`<div class="box"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+     <div><b style="font-size:16px">${esc(r.session)}</b> <span class="muted">next open ${esc(r.next_open_local||'–')} SAST${r.last_scan?' · last scan '+fmtT(r.last_scan.at)+', '+r.last_scan.opportunities+' found':''}</span></div>
+     <div style="display:flex;gap:8px;align-items:center"><label class="switch"><input type="checkbox" data-son="${esc(r.session)}" ${r.enabled?'checked':''}> on</label><button class="ghost" data-scan="${esc(r.session)}">Scan now</button></div></div>
+     <div class="chips">${r.pairs.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-srm="${esc(r.session)}" data-sym="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No pairs</span>'}
+     <button class="ghost" data-sadd="${esc(r.session)}">+ Add</button></div></div>`).join('')}`;
+  const pairsOf=n=>SS.find(x=>x.session===n).pairs;
+  document.querySelectorAll('[data-son]').forEach(b=>b.onchange=()=>saveSession(b.dataset.son,{enabled:b.checked}));
+  document.querySelectorAll('[data-srm]').forEach(b=>b.onclick=()=>saveSession(b.dataset.srm,{pairs:pairsOf(b.dataset.srm).filter(p=>p!==b.dataset.sym)}));
+  document.querySelectorAll('[data-sadd]').forEach(b=>b.onclick=()=>openPicker(code=>{const c=canon(code).toUpperCase(),cur=pairsOf(b.dataset.sadd);
+    if(cur.includes(c)){toast('Already in this session');return}saveSession(b.dataset.sadd,{pairs:[...cur,c]})}));
+  document.querySelectorAll('[data-scan]').forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent='scanning…';
+    try{await post('/api/sessions/scan',{session:b.dataset.scan});toast('Scanning the '+esc(b.dataset.scan)+' pairs. Opportunities will appear in Opportunities and the chat.')}catch(e){toast(esc(e.message))}})}
+let sSeq=0;
+async function saveSession(name,change){const before=SS,my=++sSeq;SS=SS.map(r=>r.session===name?{...r,...change}:r);renderSessions();
+  try{const r=await post('/api/sessions',{session:name,...change});if(my===sSeq){SS=r;renderSessions()}}
+  catch(e){if(my===sSeq){SS=before;renderSessions()}toast('Not saved: '+esc(e.message))}}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-deep]');if(!b)return;
   const code=b.dataset.deep,m=SYMS.find(i=>i.symbol===code||i.symbol==='frx'+code||i.symbol==='cry'+code);
   setSymbol(m?m.symbol:code);$('#tf').value=b.dataset.tf||'H1';location.hash='#chart';
@@ -511,7 +531,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch
 show();syncChat();loadSymbols();pollAlerts();
 setTimeout(askNotifications,1200);
 setInterval(()=>{if(!busy)syncChat()},4000);setInterval(pollAlerts,15000);
-setInterval(()=>{if($('#page-paper').classList.contains('on'))loadPaper();if($('#page-markets').classList.contains('on'))loadMarkets()},20000);
+setInterval(()=>{if($('#page-paper').classList.contains('on'))loadPaper();if($('#page-markets').classList.contains('on')&&!['watch','sessions'].includes(document.querySelector('.tab.on').dataset.s))loadMarkets()},20000);
 </script>
 </body>
 </html>

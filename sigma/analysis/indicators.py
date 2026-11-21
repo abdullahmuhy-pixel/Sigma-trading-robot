@@ -25,6 +25,12 @@ def wilder(s: pd.Series, n: int) -> pd.Series:
     start = valid[0]
     seed_end = start + n
     out[seed_end - 1] = np.nanmean(vals[start:seed_end])
+    tail = vals[seed_end:]
+    if not np.isnan(tail).any():
+        # fast path: after the seed, Wilder's RMA is an EMA with alpha = 1/n
+        x = np.concatenate([[out[seed_end - 1]], tail])
+        out[seed_end - 1:] = pd.Series(x).ewm(alpha=1.0 / n, adjust=False).mean().to_numpy()
+        return pd.Series(out, index=s.index)
     for i in range(seed_end, len(vals)):
         v = vals[i]
         out[i] = out[i - 1] if np.isnan(v) else (out[i - 1] * (n - 1) + v) / n
@@ -41,8 +47,14 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 
 def true_range(df: pd.DataFrame) -> pd.Series:
-    pc = df["close"].shift()
-    return pd.concat([df["high"] - df["low"], (df["high"] - pc).abs(), (df["low"] - pc).abs()], axis=1).max(axis=1)
+    """max(high-low, |high-prev close|, |low-prev close|); the first bar has no previous close."""
+    h, l, c = (df[k].to_numpy(dtype=float) for k in ("high", "low", "close"))
+    pc = np.empty_like(c)
+    pc[0] = np.nan
+    pc[1:] = c[:-1]
+    with np.errstate(invalid="ignore"):
+        tr = np.fmax(h - l, np.fmax(np.abs(h - pc), np.abs(l - pc)))
+    return pd.Series(tr, index=df.index)
 
 
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
