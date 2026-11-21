@@ -207,7 +207,7 @@ def candles(symbol: str, timeframe: str = "H1", count: int = 300):
 
 @app.get("/api/signals")
 def signals(limit: int = 50, all: bool = False):
-    sql = ("SELECT a.*, t.status, t.r_multiple, t.id trade_id FROM analyses a "
+    sql = ("SELECT a.*, t.status, t.r_multiple, t.id trade_id, t.order_type, t.demo FROM analyses a "
            "LEFT JOIN trades t ON t.analysis_id=a.id WHERE a.source!='backtest'")
     if not all:
         sql += " AND a.is_signal=1"
@@ -324,6 +324,31 @@ def demo_account_settings(body: AccountIn):
 def get_alerts(after_id: int = 0):
     from . import alerts
     return alerts.since(after_id)
+
+
+@app.get("/api/goals")
+def goal_plan():
+    from . import goals
+    return goals.plan()
+
+
+class GoalIn(BaseModel):
+    balance: float
+    currency: str = "USD"
+    target: float
+    period: str = "week"
+    risk_pct: float | None = None
+    trades_per_day: int | None = None
+
+
+@app.post("/api/goals")
+def set_goal(body: GoalIn):
+    from . import goals
+    try:
+        goals.set_goal(**body.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return goals.plan()
 
 
 @app.get("/api/calendar")

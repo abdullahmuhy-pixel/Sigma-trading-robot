@@ -1,6 +1,6 @@
 // Sigma service worker: lets the app install on phones/desktops and open instantly.
 // Live data (/api) always comes from the server so every device sees the same state.
-const CACHE = 'sigma-shell-v1';
+const CACHE = 'sigma-shell-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -23,4 +23,13 @@ self.addEventListener('fetch', e => {
       return r;
     }).catch(() => caches.match(e.request).then(m => m || caches.match('/')))
   );
+});
+
+// tapping an opportunity notification opens (or focuses) the app on the Markets page
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
+    for (const c of list) { if ('focus' in c) { c.navigate('/#markets'); return c.focus(); } }
+    return self.clients.openWindow('/#markets');
+  }));
 });
