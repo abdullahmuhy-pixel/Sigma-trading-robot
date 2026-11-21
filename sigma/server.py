@@ -170,8 +170,12 @@ def review_trade(body: ReviewIn):
 
 
 @app.get("/api/analyze")
-def analyze(symbol: str, timeframe: str = "H1"):
+def analyze(symbol: str, timeframe: str = "H1", deep: bool = True):
     try:
+        if deep:
+            from . import deep as deep_mod
+            r = deep_mod.analyze(symbol, timeframe, source="chat")
+            return {**agent.compact(r), "deep": r["deep"]}
         return agent.compact(engine.analyze(symbol, timeframe, source="chat"))
     except Exception as e:
         raise HTTPException(400, str(e))

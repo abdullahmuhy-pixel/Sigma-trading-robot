@@ -49,6 +49,7 @@ def _int(name: str, default: int) -> int:
 ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = _get("CLAUDE_MODEL", "claude-sonnet-5-5")
 CLAUDE_WEB_SEARCH = _get("CLAUDE_WEB_SEARCH", "1") == "1"
+CLAUDE_THINKING = _get("CLAUDE_THINKING", "1") == "1"   # let Claude reason step by step before answering
 TWELVEDATA_API_KEY = _get("TWELVEDATA_API_KEY")
 FRED_API_KEY = _get("FRED_API_KEY")
 FINNHUB_API_KEY = _get("FINNHUB_API_KEY")

@@ -236,3 +236,20 @@ def test_every_deriv_instrument_resolves(monkeypatch):
     # crypto prices now come from Deriv first, so they match the Deriv platform
     from sigma.data.market import _routes
     assert _routes(resolve("BTCUSD"))[0] == ("deriv", "cryBTCUSD")
+
+
+def test_deep_analysis(offline, monkeypatch):
+    from sigma import deep
+    from sigma.symbols import tf_seconds
+    monkeypatch.setattr(market, "history", lambda s, tf, bars=3000: synth(tf_seconds(tf), min(bars, 900), seed=9))
+    deep._replay_cache.clear()
+    steps = []
+    out = deep.analyze("GBPUSD", "H1", progress=steps.append)
+    d = out["deep"]
+    assert len(steps) == 4 and set(d["timeframes"]) == {"D1", "H4", "M15"}
+    a = d["lookalike_history"]
+    assert a["searched"] > 100 and 0 <= a["found"] <= 40
+    # the blend is exactly what the method line says
+    n, wins = a["found"], round((a.get("win_rate") or 0) * a["found"])
+    assert d["blended_p_win"] == pytest.approx((d["model_p_win"] * 30 + wins) / (30 + n), abs=2e-3)
+    assert out["analysis_id"] and out["trade_id"]     # the analysis you asked for is paper-traded

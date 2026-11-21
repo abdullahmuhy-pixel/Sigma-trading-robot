@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import backtest, config, db, engine, learning, paper, review
+from . import backtest, config, db, deep, engine, learning, paper, review
 from .analysis import fundamental, sentiment
 from .data import market, news
 from .symbols import TIMEFRAMES, resolve
@@ -22,7 +22,9 @@ positioning), news sentiment and the economic calendar, and you learn from every
 
 How you work:
 - ALWAYS call tools for prices, levels and statistics. Never invent or estimate a number yourself.
-- For a trade question, call analyze_market (use multi_timeframe for a full picture). The engine's
+- For any question about one instrument, use deep_analysis (thorough, 1-2 minutes) - quality over speed.
+  Use analyze_market only for quick checks or many instruments. Quote the deep result's top-down alignment and
+  how look-alike setups from history actually turned out. The engine's
   calibrated probability and expectancy are the robot's honest view; you may veto a signal with reasons
   (e.g. conflicting higher timeframe, news risk) but never upgrade one.
 - Quote the robot's track record (performance / learning_report) when giving a signal, so the user sees
@@ -59,7 +61,13 @@ Be concise and direct. Current time: {now}.
 """
 
 TOOLS = [
-    {"name": "analyze_market", "description": "Full analysis of one instrument on one timeframe: technical "
+    {"name": "deep_analysis", "description": "DEFAULT for analysing one instrument (takes 1-2 minutes): top-down across "
+     "timeframes, look-alike setups from this instrument's own history and their real outcomes, fundamentals, news, "
+     "events, order type and full explanation. Journals and paper-trades it.",
+     "input_schema": {"type": "object", "properties": {
+         "symbol": {"type": "string", "description": "any Deriv instrument or alias (V75, Boom 1000, XAUUSD...)"},
+         "timeframe": {"type": "string", "enum": list(TIMEFRAMES)}}, "required": ["symbol", "timeframe"]}},
+    {"name": "analyze_market", "description": "QUICK (seconds) analysis of one instrument on one timeframe: technical "
      "components, fundamentals, news, event risk, learned probability, entry/SL/TP. Journals and paper-trades it.",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string", "description": "Any Deriv instrument: EURUSD, XAUUSD, BTCUSD, R_75 / 'Volatility 75 Index', 1HZ100V, BOOM1000, JD25, stpRNG, OTC_NDX... (use list_symbols if unsure)"},
@@ -160,6 +168,9 @@ def compact(res: dict) -> dict:
 
 
 def run_tool(name: str, args: dict) -> object:
+    if name == "deep_analysis":
+        r = deep.analyze(args["symbol"], args["timeframe"], source="chat")
+        return {**compact(r), "deep": r["deep"]}
     if name == "analyze_market":
         return compact(engine.analyze(args["symbol"], args["timeframe"], source="chat"))
     if name == "multi_timeframe":
@@ -311,11 +322,17 @@ def chat(message: str, session: str = "default", max_turns: int = 12, images: li
     client = _client()
     used = []
     reply = ""
+    thinking = config.CLAUDE_THINKING
     for _ in range(max_turns):
         try:
-            resp = client.messages.create(model=config.CLAUDE_MODEL, max_tokens=4000, system=system,
-                                          tools=tools, messages=messages)
+            extra = {"thinking": {"type": "enabled", "budget_tokens": 6000}} if thinking else {}
+            resp = client.messages.create(model=config.CLAUDE_MODEL, max_tokens=12000 if thinking else 4000,
+                                          system=system, tools=tools, messages=messages, **extra)
         except Exception as e:
+            if thinking:
+                log.warning("retrying without extended thinking: %s", e)
+                thinking = False
+                continue
             if any(t.get("name") == "web_search" for t in tools):
                 log.warning("retrying without web search: %s", e)
                 tools = [t for t in tools if t.get("name") != "web_search"]

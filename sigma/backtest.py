@@ -43,7 +43,7 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
             c.execute("DELETE FROM analyses WHERE source='backtest' AND symbol=? AND timeframe=?", (inst.name, tf))
 
     secs = tf_seconds(tf)
-    model = learning.refit(before=times_start(df), use_db=store)
+    model = learning.refit(before=times_start(df), use_db=True) if store else learning.model()
     pending: list[dict] = []          # trades not yet resolved at the current bar
     results: list[dict] = []
     since_refit = 0
@@ -62,7 +62,7 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
             else:
                 still.append(p)
         pending = still
-        if since_refit >= refit_every:
+        if store and since_refit >= refit_every:
             model = learning.refit(before=now, use_db=store, extra_rows=[
                 {"direction": t["direction"], "r_multiple": t["r_multiple"], "source": "backtest",
                  "components": t["res"]["components"], "regime": t["res"]["regime"],
@@ -106,7 +106,10 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
         _store(results)
         learning.refit_and_save()
     _progress[key]["status"] = "done"
-    return report(results, inst.name, tf)
+    rep = report(results, inst.name, tf)
+    if not store:
+        rep["_results"] = results
+    return rep
 
 
 def times_start(df: pd.DataFrame) -> float:
