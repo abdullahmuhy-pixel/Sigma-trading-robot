@@ -339,3 +339,22 @@ def test_journal_grades_and_reports(offline):
     st = journal.order_stats(cache_seconds=0)
     assert set(st) == {"MARKET", "LIMIT", "STOP"}
     assert journal.recent()[0]["id"] == res["analysis_id"]
+
+
+def test_prune_keeps_what_matters(offline):
+    old = time.time() - 100 * 86400
+    keep_sig = engine.analyze("EURUSD", "H1", source="chat")          # yours: kept
+    for aid in (keep_sig["analysis_id"],):
+        db.update("analyses", aid, {"created_at": old})
+    shadow = db.insert("analyses", {"created_at": old, "bar_time": old, "symbol": "GBPUSD", "timeframe": "H1",
+                                    "source": "live", "direction": 1, "is_signal": 0, "components": {}})
+    db.insert("trades", {"analysis_id": shadow, "symbol": "GBPUSD", "timeframe": "H1", "source": "live",
+                         "direction": 1, "entry": 1, "sl": 0.9, "tp": 1.2, "opened_at": old, "expires_at": old,
+                         "status": "lost", "r_multiple": -1})
+    sig = db.insert("analyses", {"created_at": old, "bar_time": old + 1, "symbol": "GBPUSD", "timeframe": "H1",
+                                 "source": "live", "direction": 1, "is_signal": 1, "components": {}})
+    db.prune()
+    ids = {r["id"] for r in db.q("SELECT id FROM analyses")}
+    assert shadow not in ids and sig in ids and keep_sig["analysis_id"] in ids
+    assert not db.q("SELECT id FROM trades WHERE analysis_id=?", (shadow,))
+    assert db.size_mb() is not None

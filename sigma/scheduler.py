@@ -58,6 +58,10 @@ def _monitor() -> None:
                 log.info("resolved %d paper trades", len(closed))
             from . import journal
             journal.grade_pending()
+            if time.time() - state.get("last_prune", 0) > 6 * 3600:
+                from . import db
+                state["last_prune"] = time.time()
+                state["db"] = db.prune()
         except Exception as e:
             _err(f"monitor: {e}")
         state["last_monitor"] = time.time()

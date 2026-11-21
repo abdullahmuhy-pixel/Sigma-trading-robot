@@ -365,7 +365,7 @@ def calendar():
 
 @app.get("/api/status")
 def status():
-    return {"time": time.time(), "tz": config.DISPLAY_TZ, "database": db.backend(),
+    return {"time": time.time(), "tz": config.DISPLAY_TZ, "database": db.backend(), "database_mb": db.size_mb(),
             "login_enabled": bool(config.APP_PASSWORD), "watchlist": config.WATCHLIST,
             "scan_timeframes": config.SCAN_TIMEFRAMES, "scheduler": scheduler.state,
             "open_trades": len(paper.open_positions()),

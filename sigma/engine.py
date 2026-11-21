@@ -216,9 +216,12 @@ def record(res: dict, source: str) -> int:
         "raw_probability": res["raw_probability"],
         "expectancy": res["expectancy"], "is_signal": int(res["is_signal"]), "entry": res["entry"],
         "sl": res["sl"], "tp": res["tp"], "regime": res["regime"], "setup_key": res["setup_key"],
-        "components": res["components"],
-        "features": {"context": {k: v for k, v in res["context"].items() if k not in ("levels",)},
-                     "fundamental": (res.get("fundamental") or {}).get("parts"),
-                     "headlines": [h["title"] for h in ((res.get("news") or {}).get("headlines") or [])[:5]]},
+        "components": {k: round(v, 4) for k, v in res["components"].items()},
+        # the full snapshot is kept for signals and for analyses you asked for; scanner leans and
+        # backtests keep only their scores (enough for learning) so the database stays small
+        "features": ({"context": {k: v for k, v in res["context"].items() if k not in ("levels",)},
+                      "fundamental": (res.get("fundamental") or {}).get("parts"),
+                      "headlines": [h["title"] for h in ((res.get("news") or {}).get("headlines") or [])[:5]]}
+                     if (res.get("is_signal") or source == "chat") and source != "backtest" else {}),
         "notes": res["notes"], "blocked_reason": res["blocked_reason"],
     })

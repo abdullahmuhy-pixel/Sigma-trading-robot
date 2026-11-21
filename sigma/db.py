@@ -165,6 +165,12 @@ def connect(path: str | None = None):
                                     prepare_threshold=None)  # pooled Supabase URLs dislike prepared statements
             _backend = "postgres"
             with _conn.cursor() as cur:
+                # keep everything in its own schema so Sigma can share a database with another app
+                sch = config.DB_SCHEMA
+                if not re.fullmatch(r"[a-z_][a-z0-9_]*", sch):
+                    raise ValueError("DB_SCHEMA must be a simple lower-case name")
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {sch}")
+                cur.execute(f"SET search_path TO {sch}")
                 for stmt in pg_schema().split(";"):
                     if stmt.strip():
                         cur.execute(stmt)
@@ -270,6 +276,36 @@ def kv_set(key: str, value: Any) -> None:
     execute("INSERT INTO kv(key,value,updated_at) VALUES(?,?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
             (key, json.dumps(value), time.time()))
+
+
+def size_mb() -> float | None:
+    try:
+        if connect() and _backend == "postgres":
+            r = q1("SELECT COALESCE(SUM(pg_total_relation_size(c.oid)),0) b FROM pg_class c "
+                   "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=? AND c.relkind='r'",
+                   (config.DB_SCHEMA,))
+            return round(float(r["b"]) / 1e6, 1)
+        p = config.DB_PATH
+        return round(p.stat().st_size / 1e6, 1) if p.exists() else 0.0
+    except Exception:
+        return None
+
+
+def prune(shadow_days: int | None = None, chat_days: int = 120, alert_days: int = 90) -> dict:
+    """Keeps the database small (Supabase free tier: 500 MB shared with your other app).
+    Deleted: scanner analyses that were NOT signals (and their shadow trades) older than shadow_days,
+    old chat messages and alerts. Signals, your own analyses, your trades and backtests are kept."""
+    days = shadow_days or config.KEEP_SHADOW_DAYS
+    cut = time.time() - days * 86400
+    old = "SELECT id FROM analyses WHERE source='live' AND is_signal=0 AND created_at < ?"
+    execute(f"DELETE FROM trades WHERE origin='robot' AND status NOT IN ('open','pending') AND analysis_id IN ({old})", (cut,))
+    execute(f"DELETE FROM analyses WHERE id IN ({old}) AND id NOT IN (SELECT analysis_id FROM trades WHERE analysis_id IS NOT NULL)", (cut,))
+    execute("DELETE FROM chat WHERE created_at < ?", (time.time() - chat_days * 86400,))
+    execute("DELETE FROM alerts WHERE created_at < ?", (time.time() - alert_days * 86400,))
+    size = size_mb()
+    if size is not None and size > config.MAX_DB_MB and days > 3:   # still too big: prune harder
+        return prune(max(3, days // 2), chat_days, alert_days)
+    return {"size_mb": size, "kept_shadow_days": days}
 
 
 def decode(row: dict) -> dict:
