@@ -66,7 +66,21 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--dim);font-weight:600;text-transf
 #attach{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px}.thumb{position:relative}.thumb img{height:54px;border-radius:6px;border:1px solid var(--line)}
 .thumb span{position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;text-align:center;cursor:pointer;line-height:18px}
 .msg img{max-width:100%;border-radius:6px}
-#install{display:none}#mnav{display:none}
+#install{display:none}
+#symbtn{min-width:170px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+#picker{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;align-items:flex-start;justify-content:center;padding-top:max(40px,env(safe-area-inset-top))}
+#picker.on{display:flex}
+#pbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(560px,94vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+#psearch{margin:12px;font-size:16px;padding:11px}
+#pchips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px}
+#pchips button{font-size:12px;padding:5px 10px;background:transparent;color:var(--dim);border:1px solid var(--line)}
+#pchips button.on{background:var(--accent);color:#111;border-color:var(--accent)}
+#plist{overflow:auto;padding:0 6px 10px}
+#plist .grp{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;padding:10px 8px 4px}
+#plist .it{display:flex;justify-content:space-between;align-items:center;padding:11px 10px;border-radius:8px;cursor:pointer}
+#plist .it:hover,#plist .it.sel{background:var(--panel2)}
+#plist .code{font:11.5px var(--mono);color:var(--dim)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;background:var(--up)}.dot.off{background:#555}#mnav{display:none}
 @media(max-width:900px){
  header{padding:8px 12px;padding-top:max(8px,env(safe-area-inset-top));flex-wrap:wrap;gap:8px}#keys,#learnpill{display:none}
  main{display:block;height:calc(100% - 52px - 58px - env(safe-area-inset-bottom))}
@@ -105,8 +119,8 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--dim);font-weight:600;text-transf
   </section>
   <section id="right">
     <div class="bar">
-      <select id="mkt" title="Market"><option value="">All markets</option></select>
-      <select id="sym" title="Instrument" style="max-width:240px"><option value="frxEURUSD">EUR/USD</option></select>
+      <input type="hidden" id="sym" value="frxEURUSD">
+      <button type="button" class="ghost" id="symbtn" title="Search instruments">🔍 <span id="symname">EUR/USD</span> ▾</button>
       <select id="tf"><option>M5</option><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
       <button id="analyze">Analyze</button>
       <button class="ghost" id="scan">Scan watchlist</button>
@@ -136,6 +150,9 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--dim);font-weight:600;text-transf
     <div class="pane" id="p-cal"></div>
   </section>
 </main>
+<div id="picker"><div id="pbox">
+  <input id="psearch" placeholder="Search: V75, Boom 1000, gold, BTC, EUR/USD, US Tech…" autocomplete="off">
+  <div id="pchips"></div><div id="plist"></div></div></div>
 <nav id="mnav"><div data-v="chat" class="on">💬 Chat</div><div data-v="markets">📈 Markets & activity</div></nav>
 <script>
 const TZ = 'Africa/Johannesburg';
@@ -215,18 +232,43 @@ function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
 $('#analyze').onclick=async()=>{const b=$('#analyze');b.disabled=true;await loadChart();
   try{const a=await api(`/api/analyze?symbol=${encodeURIComponent($('#sym').value)}&timeframe=${$('#tf').value}`);showCard(a);drawLevels(a);refreshTabs()}
   catch(e){$('#card').style.display='block';$('#card').textContent=e.message}finally{b.disabled=false}};
-$('#tf').onchange=loadChart;$('#sym').onchange=()=>{try{localStorage.setItem('sigma_sym',$('#sym').value)}catch(e){};loadChart()};
-// ---------------- every Deriv instrument, grouped by market
-let SYMS=[];
-function fillSymbols(){const m=$('#mkt').value,cur=$('#sym').value;const list=SYMS.filter(i=>!m||i.market_label===m);
-  const groups={};list.forEach(i=>(groups[i.submarket_label||i.market_label]??=[]).push(i));
-  $('#sym').innerHTML=Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(g)}">${xs.map(i=>`<option value="${esc(i.symbol)}">${i.open?'':'◌ '}${esc(i.name)}</option>`).join('')}</optgroup>`).join('');
-  if(list.some(i=>i.symbol===cur))$('#sym').value=cur}
-async function loadSymbols(){try{SYMS=await api('/api/symbols');const mk=[...new Set(SYMS.map(i=>i.market_label))];
-  $('#mkt').innerHTML='<option value="">All markets</option>'+mk.map(x=>`<option>${esc(x)}</option>`).join('');
+$('#tf').onchange=loadChart;
+// ---------------- every Deriv instrument, searchable
+let SYMS=[], pMarket='', pSel=0, pShown=[];
+const norm=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function aliasesOf(i){const n=i.name||'',a=[norm(n),norm(i.symbol),norm(n.replace(/\bindex\b/i,''))];let m;
+  if(m=n.match(/Volatility (\d+) \(1s\) Index/i))a.push('v'+m[1]+'1s','vix'+m[1]+'1s');
+  else if(m=n.match(/Volatility (\d+) Index/i))a.push('v'+m[1],'vix'+m[1]);
+  if(m=n.match(/(Boom|Crash|Jump) (\d+)/i))a.push(norm(m[1]+m[2]));
+  if(/gold/i.test(n))a.push('xau');if(/silver/i.test(n))a.push('xag');if(/bitcoin|btc/i.test(n+i.symbol))a.push('bitcoin','btc');
+  if(/eth/i.test(i.symbol))a.push('ethereum');if(/oil/i.test(n))a.push('crude','oil');return a}
+function setSymbol(code){$('#sym').value=code;const i=SYMS.find(x=>x.symbol===code);$('#symname').textContent=i?i.name:code;
+  try{localStorage.setItem('sigma_sym',code)}catch(e){};loadChart()}
+function renderPicker(){const q=norm($('#psearch').value);
+  const list=SYMS.filter(i=>(!pMarket||i.market_label===pMarket)&&(!q||aliasesOf(i).some(a=>a.includes(q))));
+  // exact alias / prefix matches first
+  list.sort((a,b)=>{const ra=aliasesOf(a).some(x=>x===q)?0:aliasesOf(a).some(x=>x.startsWith(q))?1:2,rb=aliasesOf(b).some(x=>x===q)?0:aliasesOf(b).some(x=>x.startsWith(q))?1:2;return ra-rb});
+  pShown=list.slice(0,300);pSel=0;let html='',last='';
+  pShown.forEach((i,k)=>{const g=q?'':(i.market_label+(i.submarket_label?' · '+i.submarket_label:''));if(g&&g!==last){html+=`<div class="grp">${esc(g)}</div>`;last=g}
+    html+=`<div class="it${k===0?' sel':''}" data-k="${k}"><span><span class="dot${i.open?'':' off'}"></span>${esc(i.name)}</span><span class="code">${esc(i.symbol)}</span></div>`});
+  $('#plist').innerHTML=html||'<p class="muted" style="padding:12px">No match. You can still ask the chat about it.</p>';
+  $('#plist').querySelectorAll('.it').forEach(el=>el.onclick=()=>pick(+el.dataset.k))}
+function pick(k){const i=pShown[k];if(!i)return;closePicker();setSymbol(i.symbol)}
+function openPicker(){$('#picker').classList.add('on');$('#psearch').value='';renderPicker();setTimeout(()=>$('#psearch').focus(),50)}
+function closePicker(){$('#picker').classList.remove('on')}
+$('#symbtn').onclick=openPicker;$('#picker').onclick=e=>{if(e.target.id==='picker')closePicker()};
+$('#psearch').oninput=renderPicker;
+$('#psearch').onkeydown=e=>{const its=$('#plist').querySelectorAll('.it');
+  if(e.key==='Escape')closePicker();
+  else if(e.key==='Enter'){e.preventDefault();pick(pSel)}
+  else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();its[pSel]?.classList.remove('sel');pSel=Math.max(0,Math.min(its.length-1,pSel+(e.key==='ArrowDown'?1:-1)));its[pSel]?.classList.add('sel');its[pSel]?.scrollIntoView({block:'nearest'})}};
+async function loadSymbols(){try{SYMS=await api('/api/symbols');
+  const mk=[...new Set(SYMS.map(i=>i.market_label))];
+  $('#pchips').innerHTML=['All',...mk].map(m=>`<button data-m="${m==='All'?'':esc(m)}" class="${m==='All'?'on':''}">${esc(m)}</button>`).join('');
+  $('#pchips').querySelectorAll('button').forEach(b=>b.onclick=()=>{pMarket=b.dataset.m;$('#pchips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderPicker();$('#psearch').focus()});
   let saved='frxEURUSD';try{saved=localStorage.getItem('sigma_sym')||saved}catch(e){}
-  fillSymbols();if(SYMS.some(i=>i.symbol===saved))$('#sym').value=saved;loadChart()}catch(e){$('#provider').textContent='symbols: '+e.message}}
-$('#mkt').onchange=()=>{fillSymbols();loadChart()};loadSymbols();
+  setSymbol(SYMS.some(i=>i.symbol===saved)?saved:(SYMS[0]?.symbol||'frxEURUSD'))}catch(e){$('#provider').textContent='symbols: '+e.message;loadChart()}}
+loadSymbols();
 $('#scan').onclick=async()=>{await post('/api/scan',{timeframe:$('#tf').value});status()};
 function showCard(a){const c=$('#card');c.style.display='block';const dir=a.direction==='LONG';
   c.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
