@@ -1,0 +1,25 @@
+# One-click deploy: https://render.com/deploy?repo=<your GitHub repo URL>
+# Render reads this file and creates the web service. Keys are entered in Render's dashboard.
+services:
+  - type: web
+    name: sigma-trading-robot
+    runtime: docker
+    plan: free            # free instances sleep when idle - see .github/workflows/keepalive.yml
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_PASSWORD
+        sync: false       # choose a password; every device signs in once with it
+      - key: DATABASE_URL
+        sync: false       # Supabase "Session pooler" connection string -> data synced and kept across restarts
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false
+      - key: TWELVEDATA_API_KEY
+        sync: false
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: ALPHAVANTAGE_API_KEY
+        sync: false
+      - key: DISPLAY_TZ
+        value: Africa/Johannesburg

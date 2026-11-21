@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Sigma · Sign in</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;color:#e6edf3;font:15px Inter,system-ui,sans-serif}
+form{background:#121821;border:1px solid #243041;border-radius:14px;padding:28px;width:min(340px,88vw)}
+h1{margin:0 0 4px;font-size:20px}h1 b{color:#f5b83d}p{color:#8b98a8;margin:0 0 18px}
+input{width:100%;box-sizing:border-box;background:#18202b;color:#e6edf3;border:1px solid #243041;border-radius:8px;padding:11px;font:inherit}
+button{margin-top:12px;width:100%;background:#f5b83d;border:0;border-radius:8px;padding:11px;font-weight:700;cursor:pointer}
+#err{color:#ef4444;min-height:1.2em;margin-top:10px}
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>Σ <b>SIGMA</b></h1>
+  <p>Sign in once on each device. You stay signed in.</p>
+  <input id="pw" type="password" placeholder="App password" autocomplete="current-password" autofocus>
+  <button>Sign in</button>
+  <div id="err"></div>
+</form>
+<script>
+document.getElementById('f').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: document.getElementById('pw').value})});
+  if (r.ok) location.href = '/'; else document.getElementById('err').textContent = 'Wrong password';
+};
+</script>
+</body>
+</html>

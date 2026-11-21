@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sigma">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Sigma Trading Robot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+:root{--bg:#0b0f14;--panel:#121821;--panel2:#18202b;--line:#243041;--text:#e6edf3;--dim:#8b98a8;
+--up:#22c55e;--down:#ef4444;--accent:#f5b83d;--blue:#5aa9ff;--mono:'IBM Plex Mono',monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.logo{font-weight:700;letter-spacing:.5px;font-size:17px}.logo b{color:var(--accent)}
+.pill{font:12px var(--mono);color:var(--dim);padding:3px 8px;border:1px solid var(--line);border-radius:20px}
+.pill.ok{color:var(--up);border-color:#1f4d33}.pill.off{color:#a3a3a3}
+main{display:grid;grid-template-columns:420px 1fr;height:calc(100% - 52px)}
+#chat{display:flex;flex-direction:column;border-right:1px solid var(--line);min-height:0}
+#msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{padding:10px 13px;border-radius:10px;max-width:96%;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:#1d3557;border:1px solid #2a4a75}
+.msg.bot{background:var(--panel2);border:1px solid var(--line)}
+.msg table{border-collapse:collapse;font-size:12.5px;margin:6px 0}.msg td,.msg th{border:1px solid var(--line);padding:3px 6px}
+.msg p{margin:.35em 0}.msg code{font-family:var(--mono);font-size:12.5px}
+.tools{font:11px var(--mono);color:var(--dim);margin-top:6px}
+#chatform{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+textarea{flex:1;resize:none;height:62px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit}
+button{background:var(--accent);color:#111;border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:wait}
+.quick{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px}.quick button{font-size:12px;padding:4px 9px}
+#right{display:flex;flex-direction:column;min-height:0;overflow:auto}
+.bar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+select,input{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit}
+#chart{height:380px;border-bottom:1px solid var(--line)}
+#card{padding:12px 14px;border-bottom:1px solid var(--line);display:none}
+.sig{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.kv{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kv .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}.kv .v{font:600 15px var(--mono)}
+.long{color:var(--up)}.short{color:var(--down)}
+.comps{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.comp{font:12px var(--mono);padding:3px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
+.tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.tab{padding:10px 12px;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent}
+.tab.on{color:var(--text);border-color:var(--accent)}
+.pane{padding:14px;display:none}.pane.on{display:block}
+table.grid{width:100%;border-collapse:collapse;font-size:13px}
+table.grid th{text-align:left;color:var(--dim);font-weight:500;border-bottom:1px solid var(--line);padding:6px}
+table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono);font-size:12.5px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.wbar{display:flex;align-items:center;gap:8px;margin:4px 0;font:12.5px var(--mono)}
+.wbar .lbl{width:130px;color:var(--dim)}.wbar .track{flex:1;height:10px;background:var(--panel2);border-radius:5px;position:relative}
+.wbar .fill{position:absolute;top:0;height:10px;border-radius:5px}
+h3{margin:18px 0 8px;font-size:14px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+canvas{width:100%;height:220px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.muted{color:var(--dim)}
+#attach{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px}.thumb{position:relative}.thumb img{height:54px;border-radius:6px;border:1px solid var(--line)}
+.thumb span{position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;text-align:center;cursor:pointer;line-height:18px}
+.msg img{max-width:100%;border-radius:6px}
+#install{display:none}#mnav{display:none}
+@media(max-width:900px){
+ header{padding:8px 12px;padding-top:max(8px,env(safe-area-inset-top));flex-wrap:wrap;gap:8px}#keys,#learnpill{display:none}
+ main{display:block;height:calc(100% - 52px - 58px - env(safe-area-inset-bottom))}
+ #chat,#right{display:none;height:100%}body.v-chat #chat{display:flex}body.v-markets #right{display:flex}
+ #mnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+ #mnav div{flex:1;text-align:center;padding:12px 0;color:var(--dim);font-weight:600}#mnav div.on{color:var(--accent)}
+ #chart{height:300px}.tabs{overflow-x:auto}.tab{white-space:nowrap}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Σ <b>SIGMA</b> Trading Robot</div>
+  <span id="clock" class="pill"></span>
+  <span id="keys" class="pill">…</span>
+  <span id="learnpill" class="pill">model: …</span>
+  <span id="scanpill" class="pill"></span>
+  <span id="syncpill" class="pill">sync …</span>
+  <button id="install" class="ghost">Install app</button>
+</header>
+<main>
+  <section id="chat">
+    <div id="msgs"></div>
+    <div class="quick">
+      <button class="ghost" data-q="Scan the watchlist on H1 and give me the best signals">Scan H1</button>
+      <button class="ghost" data-q="Full multi-timeframe analysis of XAUUSD with fundamentals and news">Gold MTF</button>
+      <button class="ghost" data-q="What high-impact news is coming in the next 24 hours?">News today</button>
+      <button class="ghost" data-q="What have you learned so far? Show your learning report and best and worst setups.">What have you learned?</button>
+      <button class="ghost" data-fill="Review my trade: BUY EURUSD on H1, entry 1.0850, stop loss 1.0820, take profit 1.0920">Review my trade</button>
+      <button class="ghost" data-q="How are the trades I asked you to review doing? Show my track record.">My trades</button>
+    </div>
+    <div id="attach"></div>
+    <form id="chatform"><label class="ghost" title="Attach chart screenshot" style="cursor:pointer;align-self:center;font-size:22px;padding:0 4px">📎<input id="file" type="file" accept="image/*" multiple hidden></label>
+    <textarea id="input" placeholder="Ask Sigma… e.g. 'Analyse EURUSD on H1' or 'Review my trade: buy XAUUSD 2650, SL 2640, TP 2675'"></textarea><button id="send">Send</button></form>
+  </section>
+  <section id="right">
+    <div class="bar">
+      <input id="sym" value="EURUSD" size="10">
+      <select id="tf"><option>M5</option><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
+      <button id="analyze">Analyze</button>
+      <button class="ghost" id="scan">Scan watchlist</button>
+      <span class="muted" id="provider"></span>
+    </div>
+    <div id="chart"></div>
+    <div id="card"></div>
+    <div class="tabs">
+      <div class="tab on" data-p="signals">Signals</div><div class="tab" data-p="trades">Paper trades</div>
+      <div class="tab" data-p="mine">Your trades</div><div class="tab" data-p="perf">Performance</div><div class="tab" data-p="learn">Learning</div>
+      <div class="tab" data-p="bt">Backtest</div><div class="tab" data-p="cal">Calendar</div>
+    </div>
+    <div class="pane on" id="p-signals"></div>
+    <div class="pane" id="p-trades"></div>
+    <div class="pane" id="p-mine"></div>
+    <div class="pane" id="p-perf"></div>
+    <div class="pane" id="p-learn"></div>
+    <div class="pane" id="p-bt">
+      <div class="bar" style="padding-left:0;border:0">
+        <input id="btsym" value="EURUSD" size="10">
+        <select id="bttf"><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
+        <input id="btbars" value="3000" size="6"><button id="btrun">Run walk-forward backtest</button>
+      </div>
+      <p class="muted">Replays history bar by bar with the live engine, paper-trades every analysis and trains the learning model without look-ahead. Fundamentals/news are not available historically, so they learn from live trades only.</p>
+      <div id="btprog"></div>
+    </div>
+    <div class="pane" id="p-cal"></div>
+  </section>
+</main>
+<nav id="mnav"><div data-v="chat" class="on">💬 Chat</div><div data-v="markets">📈 Markets & activity</div></nav>
+<script>
+const TZ = 'Africa/Johannesburg';
+const $ = s => document.querySelector(s);
+const fmtT = t => t ? new Date(t*1000).toLocaleString('en-ZA',{timeZone:TZ,month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+const fx = (v,d=5) => v==null ? '–' : (+v).toFixed(d);
+const pct = v => v==null ? '–' : (v*100).toFixed(1)+'%';
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path, opts){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('login required')}if(!r.ok)throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail);return r.json()}
+const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+
+// ---------------- clock & status
+setInterval(()=>$('#clock').textContent=new Date().toLocaleString('en-ZA',{timeZone:TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'})+' SAST',1000);
+async function status(){try{const s=await api('/api/status');
+  const k=Object.entries(s.keys).map(([n,v])=>(v?'●':'○')+n).join(' ');$('#keys').textContent=k;
+  const m=s.model;$('#learnpill').textContent=`model: ${m.n_live} live + ${m.n_backtest} backtest trades · calib ${(m.calib||[0,1])[1].toFixed(2)}`;
+  $('#scanpill').textContent=s.scheduler.scanning?('scanning '+s.scheduler.scanning):(`${s.open_trades} open paper trades`);
+}catch(e){}}
+status();setInterval(status,10000);
+
+// ---------------- chat (synced across devices through the server)
+let lastId=0, pending=[], busy=false;
+function addMsg(role,text,tools){const d=document.createElement('div');d.className='msg '+(role==='user'?'user':'bot');
+  d.innerHTML=role==='user'?esc(text).replace(/\n/g,'<br>'):DOMPurify.sanitize(marked.parse(text||''));
+  if(tools&&tools.length){const t=document.createElement('div');t.className='tools';t.textContent='tools: '+tools.map(x=>x.tool).join(', ');d.appendChild(t)}
+  $('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d}
+async function syncChat(){try{const rows=await api('/api/chat/history?after_id='+lastId+(lastId?'':'&limit=80'));
+  if(!lastId&&!rows.length)addMsg('bot','Hi, I\'m **Sigma**. Ask me to analyse any market, scan the watchlist, explain the news, or **review a trade you are thinking of taking** (you can attach a chart screenshot too).');
+  rows.forEach(m=>{if(m.id>lastId){addMsg(m.role,m.content);lastId=m.id}});
+  $('#syncpill').textContent='synced '+new Date().toLocaleTimeString('en-ZA',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});$('#syncpill').className='pill ok'}
+  catch(e){$('#syncpill').textContent='offline';$('#syncpill').className='pill off'}}
+function shrink(file){return new Promise(res=>{const img=new Image();img.onload=()=>{const k=Math.min(1,1600/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=img.width*k;c.height=img.height*k;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  const url=c.toDataURL('image/jpeg',0.85);res({media_type:'image/jpeg',data:url.split(',')[1],url})};img.src=URL.createObjectURL(file)})}
+async function addFiles(files){for(const f of files){if(!f.type.startsWith('image/'))continue;pending.push(await shrink(f))}drawPending()}
+function drawPending(){$('#attach').innerHTML=pending.map((p,i)=>`<div class="thumb"><img src="${p.url}"><span data-i="${i}">×</span></div>`).join('');
+  $('#attach').querySelectorAll('span').forEach(x=>x.onclick=()=>{pending.splice(+x.dataset.i,1);drawPending()})}
+$('#file').onchange=e=>{addFiles(e.target.files);e.target.value=''};
+$('#input').addEventListener('paste',e=>{const f=[...e.clipboardData.files];if(f.length){e.preventDefault();addFiles(f)}});
+async function send(text){if((!text.trim()&&!pending.length)||busy)return;busy=true;
+  const imgs=pending.map(p=>({media_type:p.media_type,data:p.data}));const shown=addMsg('user',text);
+  pending.forEach(p=>{const i=document.createElement('img');i.src=p.url;shown.appendChild(i)});pending=[];drawPending();
+  $('#input').value='';$('#send').disabled=true;const wait=addMsg('bot','_Analysing…_');
+  try{await post('/api/chat',{message:text,images:imgs});shown.remove();wait.remove();await syncChat();refreshTabs()}
+  catch(e){wait.remove();addMsg('bot','Error: '+e.message)}finally{$('#send').disabled=false;busy=false}}
+$('#chatform').onsubmit=e=>{e.preventDefault();send($('#input').value)};
+$('#input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send($('#input').value)}};
+document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{if(b.dataset.fill){$('#input').value=b.dataset.fill;$('#input').focus()}else send(b.dataset.q)});
+syncChat();setInterval(()=>{if(!busy)syncChat()},4000);
+
+// ---------------- mobile navigation & install
+document.body.classList.add('v-chat');
+document.querySelectorAll('#mnav div').forEach(n=>n.onclick=()=>{document.querySelectorAll('#mnav div').forEach(x=>x.classList.remove('on'));n.classList.add('on');
+  document.body.classList.remove('v-chat','v-markets');document.body.classList.add('v-'+n.dataset.v);if(n.dataset.v==='markets'){chart.applyOptions({width:$('#chart').clientWidth});loadChart()}});
+let installEvt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;$('#install').style.display='inline-block'});
+$('#install').onclick=async()=>{if(installEvt){installEvt.prompt();await installEvt.userChoice;installEvt=null;$('#install').style.display='none'}};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+
+// ---------------- chart
+const chart=LightweightCharts.createChart($('#chart'),{layout:{background:{color:'#0b0f14'},textColor:'#8b98a8'},
+  grid:{vertLines:{color:'#151c26'},horzLines:{color:'#151c26'}},timeScale:{timeVisible:true,borderColor:'#243041'},
+  rightPriceScale:{borderColor:'#243041'},localization:{timeFormatter:t=>fmtT(t)}});
+const series=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444',borderVisible:false});
+let lines=[];new ResizeObserver(()=>chart.applyOptions({width:$('#chart').clientWidth,height:380})).observe($('#chart'));
+async function loadChart(){const s=$('#sym').value,tf=$('#tf').value;try{const c=await api(`/api/candles?symbol=${encodeURIComponent(s)}&timeframe=${tf}&count=300`);series.setData(c);chart.timeScale().fitContent()}catch(e){$('#provider').textContent=e.message}}
+function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
+  const add=(p,c,t,st=0)=>p&&lines.push(series.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:st,title:t}));
+  add(a.entry,'#5aa9ff','entry');add(a.stop_loss,'#ef4444','SL');add(a.take_profit,'#22c55e','TP');
+  (a.key_levels||[]).forEach(p=>add(p,'#3a4656','',2))}
+$('#analyze').onclick=async()=>{const b=$('#analyze');b.disabled=true;await loadChart();
+  try{const a=await api(`/api/analyze?symbol=${encodeURIComponent($('#sym').value)}&timeframe=${$('#tf').value}`);showCard(a);drawLevels(a);refreshTabs()}
+  catch(e){$('#card').style.display='block';$('#card').textContent=e.message}finally{b.disabled=false}};
+$('#tf').onchange=loadChart;$('#sym').onchange=loadChart;
+$('#scan').onclick=async()=>{await post('/api/scan',{timeframe:$('#tf').value});status()};
+function showCard(a){const c=$('#card');c.style.display='block';const dir=a.direction==='LONG';
+  c.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+   <div><b style="font-size:16px">${esc(a.symbol)} · ${a.timeframe}</b> <span class="muted">${esc(a.regime)} · bar ${esc(a.bar_closed)} · ${esc(a.data_source)}</span></div>
+   <div class="${dir?'long':'short'}" style="font-weight:700">${a.is_signal?'SIGNAL':'NO SIGNAL'} · ${a.direction}</div></div>
+   <div class="sig">${[['Entry',fx(a.entry)],['Stop loss',fx(a.stop_loss)],['Take profit',fx(a.take_profit)],['P(win)',pct(a.p_win_calibrated)],
+   ['Expected R',fx(a.expected_R_after_costs,2)],['Fundamental',fx(a.fundamental.score,2)],['News',fx(a.news.score,2)]]
+   .map(([k,v])=>`<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>
+   ${a.blocked_reason?`<p class="short">Blocked: ${esc(a.blocked_reason)}</p>`:''}
+   <div class="comps">${Object.entries(a.component_scores).map(([k,v])=>`<span class="comp ${v>0.1?'long':v<-0.1?'short':''}">${k} ${v>0?'+':''}${(+v).toFixed(2)}</span>`).join('')}</div>
+   <p class="muted">${(a.notes||[]).map(esc).join(' · ')}</p>`}
+
+// ---------------- tabs
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab,.pane').forEach(x=>x.classList.remove('on'));t.classList.add('on');$('#p-'+t.dataset.p).classList.add('on');refreshTabs()});
+const dirTxt=d=>d>0?'<span class="long">LONG</span>':'<span class="short">SHORT</span>';
+function table(cols,rows){return `<table class="grid"><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join('')}</tr>`).join('')}</table>`}
+async function refreshTabs(){const on=document.querySelector('.tab.on').dataset.p;try{
+ if(on==='signals'){const s=await api('/api/signals?limit=60');$('#p-signals').innerHTML=s.length?table([
+   ['Time',r=>fmtT(r.created_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Dir',r=>dirTxt(r.direction)],['Entry',r=>fx(r.entry)],['SL',r=>fx(r.sl)],['TP',r=>fx(r.tp)],
+   ['P(win)',r=>pct(r.probability)],['E[R]',r=>fx(r.expectancy,2)],['Result',r=>r.status==='open'?'open':r.r_multiple==null?'–':`<span class="${r.r_multiple>0?'long':'short'}">${r.status} ${fx(r.r_multiple,2)}R</span>`]],s)
+   :'<p class="muted">No signals yet. Signals appear when the calibrated probability and expected R clear the thresholds.</p>'}
+ if(on==='trades'){const t=await api('/api/trades?limit=120');$('#p-trades').innerHTML=table([
+   ['Opened',r=>fmtT(r.opened_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Type',r=>r.is_signal?'signal':'<span class="muted">shadow</span>'],['Dir',r=>dirTxt(r.direction)],
+   ['Entry',r=>fx(r.entry)],['SL',r=>fx(r.sl)],['TP',r=>fx(r.tp)],['Status',r=>r.status],['R',r=>r.r_multiple==null?'':`<span class="${r.r_multiple>0?'long':'short'}">${fx(r.r_multiple,2)}</span>`],['Lesson',r=>esc(r.lesson||'')]],t)
+   +'<p class="muted">Shadow trades are paper trades on analyses that did not qualify as signals; they give the learning model unbiased data.</p>'}
+ if(on==='mine'){const m=await api('/api/my-trades');const x=m.summary;
+   $('#p-mine').innerHTML=`<p class="muted">Trades you asked Sigma to review in the chat, tracked on paper. They are graded separately and do not change the robot's own learning.</p>
+   <div class="stats">${[['Closed',x.trades],['Win rate',pct(x.win_rate)],['Expectancy',fx(x.expectancy_r,2)+'R'],['Total',fx(x.total_r,1)+'R'],['Open',x.open]].map(([k,v])=>`<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>`+
+   table([['#',r=>r.id],['Opened',r=>fmtT(r.opened_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Dir',r=>dirTxt(r.direction)],['Entry',r=>fx(r.entry)],['SL',r=>fx(r.sl)],['TP',r=>fx(r.tp)],
+   ['Status',r=>r.status],['R',r=>r.r_multiple==null?'':`<span class="${r.r_multiple>0?'long':'short'}">${fx(r.r_multiple,2)}</span>`],['Lesson',r=>esc(r.lesson||'')]],m.trades)}
+ if(on==='perf'){const p=await api('/api/performance');const box=(n,s)=>`<div class="kv"><div class="k">${n}</div><div class="v">${s}</div></div>`;
+   const st=x=>box('Trades',x.trades)+box('Win rate',pct(x.win_rate))+box('Expectancy',fx(x.expectancy_r,2)+'R')+box('Total',fx(x.total_r,1)+'R')+box('Profit factor',fx(x.profit_factor,2))+box('Max DD',fx(x.max_drawdown_r,1)+'R');
+   $('#p-perf').innerHTML=`<h3>Live paper signals</h3><div class="stats">${st(p.live_signals)}</div><canvas id="eq"></canvas>
+   <h3>All live analyses (incl. shadow)</h3><div class="stats">${st(p.live_all)}</div><h3>Backtest signals (out-of-sample walk-forward)</h3><div class="stats">${st(p.backtest_signals)}</div>
+   <h3>By market</h3>${table([['Market',r=>esc(r.symbol)],['Signals',r=>r.n],['Win',r=>pct(r.win)],['Exp R',r=>fx(r.exp_r,2)]],p.by_symbol)}`;
+   drawLine($('#eq'),p.equity_live_signals.map(e=>e.equity_r))}
+ if(on==='learn'){const L=await api('/api/learning');const mx=Math.max(1,...Object.values(L.weights).map(Math.abs));
+   $('#p-learn').innerHTML=`<div class="stats"><div class="kv"><div class="k">Live trades learned</div><div class="v">${L.trained_on.live_trades}</div></div>
+   <div class="kv"><div class="k">Backtest trades</div><div class="v">${L.trained_on.backtest_trades}</div></div>
+   <div class="kv"><div class="k">Calibration slope</div><div class="v">${L.calibration_slope}</div></div></div>
+   <p class="muted">${esc(L.calibration_meaning)}</p><h3>Learned component weights</h3>
+   ${Object.entries(L.weights).map(([k,v])=>`<div class="wbar"><span class="lbl">${k}</span><div class="track"><div class="fill" style="background:${v>=0?'var(--up)':'var(--down)'};left:${v>=0?50:50-Math.abs(v)/mx*50}%;width:${Math.abs(v)/mx*50}%"></div></div><span>${v>0?'+':''}${v.toFixed(2)}</span></div>`).join('')}
+   <h3>Insights</h3><ul>${L.insights.map(i=>`<li>${esc(i)}</li>`).join('')||'<li class="muted">Not enough results yet.</li>'}</ul>
+   <h3>Calibration (predicted vs actual win rate)</h3>${table([['Bin',r=>r.bin],['n',r=>r.n],['Predicted',r=>pct(r.predicted)],['Actual',r=>pct(r.actual)]],L.calibration_table)}
+   <h3>Best setups</h3>${table([['Setup',r=>esc(r.setup)],['n',r=>r.n],['Win',r=>pct(r.win_rate)],['Exp R',r=>fx(r.expectancy,2)]],L.best_setups)}
+   <h3>Worst setups</h3>${table([['Setup',r=>esc(r.setup)],['n',r=>r.n],['Win',r=>pct(r.win_rate)],['Exp R',r=>fx(r.expectancy,2)]],L.worst_setups)}
+   <h3>Recent lessons</h3><ul>${L.recent_lessons.map(l=>`<li>${esc(l.symbol)} ${l.timeframe} ${fx(l.r_multiple,2)}R: ${esc(l.lesson)}</li>`).join('')||'<li class="muted">Lessons are written after each live signal closes (needs ANTHROPIC_API_KEY).</li>'}</ul>`}
+ if(on==='bt'){const p=await api('/api/backtest/progress');$('#btprog').innerHTML=Object.entries(p).map(([k,v])=>`<div class="kv" style="margin:6px 0">${esc(k)}: ${esc(v.status)} ${v.total?Math.round(100*v.done/v.total)+'%':''}</div>`).join('')}
+ if(on==='cal'){const c=await api('/api/calendar');$('#p-cal').innerHTML=table([['Time (SAST)',r=>fmtT(r.time)],['Ccy',r=>esc(r.currency)],['Impact',r=>`<span class="${r.impact==='High'?'short':''}">${esc(r.impact)}</span>`],['Event',r=>esc(r.title)],['Forecast',r=>esc(r.forecast)],['Previous',r=>esc(r.previous)],['Actual',r=>esc(r.actual)]],c.filter(e=>e.time>Date.now()/1000-86400))}
+}catch(e){document.querySelector('.pane.on').innerHTML='<p class="short">'+esc(e.message)+'</p>'}}
+function drawLine(cv,vals){const ctx=cv.getContext('2d');const w=cv.width=cv.clientWidth*2,h=cv.height=440;ctx.clearRect(0,0,w,h);
+  if(vals.length<2){ctx.fillStyle='#8b98a8';ctx.font='26px Inter';ctx.fillText('Equity curve appears after a few closed signals',30,60);return}
+  const v=[0,...vals],mn=Math.min(...v),mx=Math.max(...v),y=x=>h-20-(x-mn)/(mx-mn||1)*(h-40);
+  ctx.strokeStyle='#243041';ctx.beginPath();ctx.moveTo(0,y(0));ctx.lineTo(w,y(0));ctx.stroke();
+  ctx.strokeStyle=v[v.length-1]>=0?'#22c55e':'#ef4444';ctx.lineWidth=3;ctx.beginPath();v.forEach((p,i)=>i?ctx.lineTo(i/(v.length-1)*w,y(p)):ctx.moveTo(0,y(p)));ctx.stroke()}
+$('#btrun').onclick=async()=>{await post('/api/backtest',{symbol:$('#btsym').value,timeframe:$('#bttf').value,bars:+$('#btbars').value});refreshTabs()};
+setInterval(refreshTabs,15000);loadChart();refreshTabs();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Pings the hosted robot every 10 minutes so a free instance does not fall asleep
+# (the robot must stay awake to scan markets and grade paper trades).
+# Set a repository secret SIGMA_URL, e.g. https://sigma-trading-robot.onrender.com
+name: keep-sigma-awake
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        env:
+          SIGMA_URL: ${{ secrets.SIGMA_URL }}
+        run: |
+          if [ -z "$SIGMA_URL" ]; then echo "SIGMA_URL secret not set - skipping"; exit 0; fi
+          curl -fsS --max-time 60 "$SIGMA_URL/api/health" || true
