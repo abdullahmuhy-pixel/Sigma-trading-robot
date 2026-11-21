@@ -297,6 +297,29 @@ def scan_now(body: ScanIn):
     return {"started": True}
 
 
+@app.get("/api/account")
+def demo_account():
+    from . import account
+    return account.summary()
+
+
+class AccountIn(BaseModel):
+    start_balance: float | None = None
+    currency: str | None = None
+    risk_pct: float | None = None
+    reset: bool = False
+
+
+@app.post("/api/account")
+def demo_account_settings(body: AccountIn):
+    from . import account
+    try:
+        account.update_settings(**body.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return account.summary(with_prices=False)
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

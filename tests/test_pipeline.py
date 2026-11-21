@@ -253,3 +253,29 @@ def test_deep_analysis(offline, monkeypatch):
     n, wins = a["found"], round((a.get("win_rate") or 0) * a["found"])
     assert d["blended_p_win"] == pytest.approx((d["model_p_win"] * 30 + wins) / (30 + n), abs=2e-3)
     assert out["analysis_id"] and out["trade_id"]     # the analysis you asked for is paper-traded
+
+
+def test_demo_account_money(offline):
+    from sigma import account
+    account.update_settings(start_balance=10_000, currency="USD", risk_pct=1.0, reset=True)
+    res = engine.analyze("EURUSD", "H1", source="chat")       # you asked -> traded on the demo account
+    t = db.q1("SELECT * FROM trades WHERE id=?", (res["trade_id"],))
+    assert t["demo"] == 1 and t["risk_amount"] == pytest.approx(100.0)
+    # risk 100 USD over the stop distance -> units = 100 / distance (EUR/USD quoted in USD)
+    assert t["units"] == pytest.approx(100.0 / abs(t["entry"] - t["sl"]), rel=1e-6)
+    db.update("trades", t["id"], {"status": "won", "r_multiple": 2.0, "closed_at": time.time()})
+    sm = account.summary(with_prices=False)
+    assert sm["balance"] == pytest.approx(10_200.0) and sm["total_pnl"] == pytest.approx(200.0)
+    assert sm["return_pct"] == pytest.approx(2.0) and sm["pnl"]["today"] == pytest.approx(200.0)
+    # the next trade risks 1% of the NEW balance
+    res2 = engine.analyze("GBPUSD", "H1", source="chat")
+    assert db.q1("SELECT risk_amount FROM trades WHERE id=?", (res2["trade_id"],))["risk_amount"] == pytest.approx(102.0)
+    # scanner analyses that are not signals stay off the demo account
+    db.execute("DELETE FROM analyses WHERE source='live'")
+    live = engine.analyze("AUDUSD", "H1", source="live")
+    if live.get("trade_id") and not live["is_signal"]:
+        assert db.q1("SELECT demo FROM trades WHERE id=?", (live["trade_id"],))["demo"] == 0
+    with pytest.raises(ValueError):
+        account.update_settings(risk_pct=20)
+    account.update_settings(reset=True)
+    assert account.summary(with_prices=False)["balance"] == pytest.approx(10_000.0)

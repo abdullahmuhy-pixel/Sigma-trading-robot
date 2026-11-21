@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS trades (
     origin TEXT NOT NULL DEFAULT 'robot',  -- robot | user (a trade you asked Sigma to review)
     order_type TEXT DEFAULT 'MARKET',      -- BUY, SELL, BUY LIMIT, SELL LIMIT, BUY STOP, SELL STOP
     fill_by REAL,                          -- a pending order not filled by then is cancelled
+    demo INTEGER DEFAULT 0,                -- 1 = traded on the demo account (paper money)
+    risk_amount REAL,                      -- money at risk on the demo account
+    units REAL,                            -- position size on the demo account
     note TEXT,
     exit_price REAL,
     closed_at REAL,
@@ -114,7 +117,8 @@ def to_pg(sql: str) -> str:
 # columns added after the first release: added to existing databases on start-up
 MIGRATIONS = [("analyses", "raw_probability", "REAL"), ("trades", "origin", "TEXT NOT NULL DEFAULT 'robot'"),
               ("trades", "note", "TEXT"), ("trades", "order_type", "TEXT DEFAULT 'MARKET'"),
-              ("trades", "fill_by", "REAL")]
+              ("trades", "fill_by", "REAL"), ("trades", "demo", "INTEGER DEFAULT 0"),
+              ("trades", "risk_amount", "REAL"), ("trades", "units", "REAL")]
 
 
 def _migrate(execute_fn, pg: bool) -> None:

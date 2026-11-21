@@ -38,7 +38,11 @@ def open_trade(res: dict, source: str = "live", entry_price: float | None = None
         entry, status, fill_by = res["entry"], "pending", opened + pl["pending_bars"] * secs
     sl = entry - d * risk
     tp = entry + d * config.REWARD_R * risk
-    return db.insert("trades", {
+    demo = {}
+    if source == "live" and (res.get("is_signal") or res.get("source") == "chat"):
+        from . import account   # robot signals + everything you ask it to analyse go on the demo account
+        demo = {"demo": 1, **account.size_trade(resolve(res["symbol"]).quote, risk)}
+    return db.insert("trades", {**demo,
         "analysis_id": res["analysis_id"], "symbol": res["symbol"], "timeframe": res["timeframe"],
         "source": source, "direction": d, "entry": entry, "sl": sl, "tp": tp,
         "opened_at": opened, "expires_at": (fill_by or opened) + config.MAX_HOLD_BARS * secs,

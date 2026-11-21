@@ -111,6 +111,12 @@ TOOLS = [
          "required": ["symbol", "timeframe", "direction", "entry", "stop_loss"]}},
     {"name": "my_trades", "description": "The user's reviewed trades and how they turned out, with their win rate and expectancy.",
      "input_schema": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
+    {"name": "demo_account", "description": "The robot's demo account (paper money): balance, equity, profit/loss today, "
+     "this week, this month, open positions with live P&L, pending orders, recent closed trades. Can also change its "
+     "settings (starting balance, currency, risk per trade) or reset it.",
+     "input_schema": {"type": "object", "properties": {
+         "start_balance": {"type": "number"}, "currency": {"type": "string"}, "risk_pct": {"type": "number"},
+         "reset": {"type": "boolean", "description": "start the demo account again from the starting balance"}}}},
     {"name": "open_paper_trades", "description": "Currently open paper trades.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "run_backtest", "description": "Walk-forward backtest on history; also trains the learning model. Can take a minute.",
@@ -225,6 +231,17 @@ def run_tool(name: str, args: dict) -> object:
                     (int(args.get("limit", 20)),))
         return {"summary": learning.performance("live", origin="user"),
                 "trades": [{**r, "opened_at": _local(r["opened_at"]), "closed_at": _local(r["closed_at"])} for r in rows]}
+    if name == "demo_account":
+        from . import account
+        if any(args.get(k) is not None for k in ("start_balance", "currency", "risk_pct")) or args.get("reset"):
+            account.update_settings(args.get("start_balance"), args.get("currency"), args.get("risk_pct"),
+                                    bool(args.get("reset")))
+        sm = account.summary()
+        keep = ("symbol", "timeframe", "direction", "order_type", "entry", "sl", "tp", "status", "r_multiple",
+                "pnl", "unrealized_pnl", "risk_amount", "opened_at", "closed_at")
+        trim = lambda rows: [{k: (_local(v) if k.endswith("_at") else v) for k, v in r.items() if k in keep} for r in rows]  # noqa: E731
+        return {**{k: v for k, v in sm.items() if k not in ("open", "pending", "closed", "equity_curve")},
+                "open": trim(sm["open"]), "pending": trim(sm["pending"]), "recent_closed": trim(sm["closed"][:15])}
     if name == "open_paper_trades":
         return [{**t, "opened_at": _local(t["opened_at"]), "expires_at": _local(t["expires_at"])}
                 for t in paper.open_positions()[:40]]
