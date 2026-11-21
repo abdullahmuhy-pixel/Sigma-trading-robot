@@ -279,3 +279,19 @@ def test_demo_account_money(offline):
         account.update_settings(risk_pct=20)
     account.update_settings(reset=True)
     assert account.summary(with_prices=False)["balance"] == pytest.approx(10_000.0)
+
+
+def test_scanner_alert_only_when_deep_analysis_confirms(offline, monkeypatch):
+    from sigma import alerts, deep
+    fake = engine.analyze("EURUSD", "H1", source="chat")
+    fake.update(is_signal=True, analysis_id=fake["analysis_id"])
+    confirmed = {**fake, "is_signal": True, "deep": {"higher_tf_alignment": "2/2",
+                 "lookalike_history": {"found": 25, "win_rate": 0.48}}}
+    monkeypatch.setattr(deep, "analyze", lambda *a, **k: confirmed)
+    al = alerts.consider(fake)
+    assert al and fake["plan"]["order_type"] in al["title"] and "won 48%" in al["body"]
+    assert alerts.since()[-1]["title"] == al["title"]
+    assert db.q1("SELECT content FROM chat ORDER BY id DESC LIMIT 1")["content"] == al["body"]   # shows in chat on every device
+    monkeypatch.setattr(deep, "analyze", lambda *a, **k: {**confirmed, "is_signal": False})
+    assert alerts.consider(fake) is None                       # deep analysis disagreed: no alert
+    assert alerts.consider({**fake, "is_signal": False}) is None

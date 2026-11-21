@@ -25,6 +25,9 @@ def scan(tf: str, symbols: list[str] | None = None) -> list[dict]:
         try:
             r = engine.analyze(s, tf, source="live")
             out.append(r)
+            if r.get("is_signal"):
+                from . import alerts
+                alerts.consider(r)
         except Exception as e:
             _err(f"scan {s} {tf}: {e}")
     state["scanning"] = None

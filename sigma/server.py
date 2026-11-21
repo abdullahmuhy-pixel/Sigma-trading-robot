@@ -320,6 +320,12 @@ def demo_account_settings(body: AccountIn):
     return account.summary(with_prices=False)
 
 
+@app.get("/api/alerts")
+def get_alerts(after_id: int = 0):
+    from . import alerts
+    return alerts.since(after_id)
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

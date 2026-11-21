@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS kv (
     updated_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at REAL NOT NULL,
+    analysis_id INTEGER,
+    symbol TEXT, timeframe TEXT, order_type TEXT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chat (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session TEXT NOT NULL,

@@ -59,7 +59,7 @@ def lookalikes(res: dict, history: list[dict], k: int = 40) -> dict:
     return out
 
 
-def analyze(symbol: str, tf: str = "H1", source: str = "chat", progress=None) -> dict:
+def analyze(symbol: str, tf: str = "H1", source: str = "chat", progress=None, journal: bool = True) -> dict:
     t0 = time.time()
     say = progress or (lambda msg: None)
     inst = resolve(symbol)
@@ -109,7 +109,7 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", progress=None) ->
 
     main.update(probability=p, expectancy=e, is_signal=bool(is_signal),
                 blocked_reason="; ".join(reasons) or None, deep=True)
-    if not main.get("market_closed"):
+    if journal and not main.get("market_closed"):
         main["analysis_id"] = engine.record(main, source)
         if main["analysis_id"]:   # every analysis you ask for is paper-traded
             main["trade_id"] = paper.open_trade(main, source="live", entry_price=engine._live_entry(inst, main))
