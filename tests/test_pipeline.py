@@ -246,7 +246,7 @@ def test_deep_analysis(offline, monkeypatch):
     steps = []
     out = deep.analyze("GBPUSD", "H1", progress=steps.append)
     d = out["deep"]
-    assert len(steps) == 4 and set(d["timeframes"]) == {"D1", "H4", "M15"}
+    assert len(steps) == 5 and set(d["timeframes"]) == {"D1", "H4", "M15"}
     a = d["lookalike_history"]
     assert a["searched"] > 100 and 0 <= a["found"] <= 40
     # the blend is exactly what the method line says

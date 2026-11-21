@@ -365,3 +365,28 @@ def test_reach_before_stop():
     # long from 100, stop 98 (risk 2): best high before the stop bar is 104.2 -> 2.1R
     assert reach_before_stop(1, 100, 98, bars) == pytest.approx(2.1)
     assert reach_before_stop(-1, 100, 102, bars) == pytest.approx(0.25)   # short: stopped on bar 1, best low 99.5
+
+
+def test_order_follows_live_price_users_btc_case():
+    """The user's BTC/USD case: SELL planned at 60,314.40 on the closed candle, but price is already
+    59,810.89 when the analysis finishes -> it must become a SELL LIMIT at 60,314.40."""
+    from sigma import plan
+    o = {"side": "SELL", "kind": "MARKET", "order_type": "SELL", "entry": 60314.40, "sl": 61753.06,
+         "tp": 60314.40 - 2 * 1438.66, "risk": 1438.66, "pending_bars": 0, "order_reason": "", "setup_type": "x"}
+    a = plan.adjust_to_live(o, 59810.89, atr=600.0, ctx={})
+    assert a["order_type"] == "SELL LIMIT" and a["entry"] == pytest.approx(60314.40)
+    assert a["sl"] == pytest.approx(61753.06) and a["pending_bars"] == plan.PENDING_BARS
+    # price moved against a sell (higher): sell at the better live price, levels rebuilt from it
+    b = plan.adjust_to_live(o, 60600.0, atr=600.0, ctx={})
+    assert b["order_type"] == "SELL" and b["entry"] == pytest.approx(60600.0)
+    assert (b["sl"] - b["entry"]) == pytest.approx(config.SL_ATR_MULT * 600.0)
+    # mirror for buys
+    ob = {**o, "side": "BUY", "order_type": "BUY", "entry": 100.0, "sl": 98.5, "risk": 1.5}
+    assert plan.adjust_to_live(ob, 100.6, atr=1.0, ctx={})["order_type"] == "BUY LIMIT"
+    # a limit already reached / a stop already broken become market orders
+    lim = {**o, "kind": "LIMIT", "order_type": "SELL LIMIT", "entry": 60314.40}
+    assert plan.adjust_to_live(lim, 60400.0, atr=600.0, ctx={})["order_type"] == "SELL"
+    stp = {**o, "kind": "STOP", "order_type": "SELL STOP", "entry": 60000.0}
+    assert plan.adjust_to_live(stp, 59900.0, atr=600.0, ctx={})["order_type"] == "SELL"
+    # small moves (under a quarter ATR) leave the plan alone
+    assert plan.adjust_to_live(o, 60250.0, atr=600.0, ctx={})["order_type"] == "SELL"

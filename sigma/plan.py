@@ -78,6 +78,53 @@ def order(direction: int, price: float, atr: float, ctx: dict, comps: dict, regi
             "pending_bars": PENDING_BARS if kind != "MARKET" else 0}
 
 
+def adjust_to_live(order: dict, live: float, atr: float, ctx: dict) -> dict:
+    """Re-check the planned order against the price NOW. The plan is built on the last closed candle;
+    by the time a deep analysis finishes price may have moved, so the order type must follow it:
+      - market order, price already moved in the trade's favour by > 0.25 ATR  -> LIMIT at the planned
+        entry (wait for price to come back rather than chase it)
+      - market order, price moved against the trade                             -> still MARKET, at the
+        live price (a better price than planned), stop and targets rebuilt from there
+      - limit order, price already through the limit                            -> fills now: MARKET
+      - stop order, price already through the trigger                           -> triggered: MARKET
+    """
+    d = 1 if order["side"] == "BUY" else -1
+    planned = order["entry"]
+    gap = (live - planned) * d / atr if atr else 0.0     # >0: price already moved the trade's way
+    o = dict(order)
+    o["live_price"] = live
+    note = None
+    if o["kind"] == "MARKET":
+        if gap > 0.25:
+            o.update(kind="LIMIT", order_type=f"{o['side']} LIMIT", pending_bars=PENDING_BARS,
+                     order_reason=(f"price has already moved {gap:.1f} ATR in the trade's direction since the analysis "
+                                   f"candle closed ({_fmt(planned)} -> {_fmt(live)}); chasing it would cut the reward, "
+                                   f"so the order waits for a retrace to {_fmt(planned)}"))
+            note = "converted market -> limit"
+        elif gap < -0.05:
+            o["entry"] = live
+            o["sl"] = stop_loss(d, live, atr, ctx)
+            o["risk"] = abs(live - o["sl"])
+            o["tp"] = live + d * config.REWARD_R * o["risk"]
+            note = "market entry moved to the live price"
+    elif o["kind"] == "LIMIT" and (live - planned) * d <= 0:
+        o.update(kind="MARKET", order_type=o["side"], pending_bars=0, entry=live,
+                 order_reason=f"price is already at or beyond the planned limit {_fmt(planned)}, so it can be taken now")
+        o["sl"] = stop_loss(d, live, atr, ctx)
+        o["risk"] = abs(live - o["sl"])
+        o["tp"] = live + d * config.REWARD_R * o["risk"]
+        note = "limit already reached -> market"
+    elif o["kind"] == "STOP" and (live - planned) * d >= 0:
+        o.update(kind="MARKET", order_type=o["side"], pending_bars=0, entry=live,
+                 order_reason=f"the breakout level {_fmt(planned)} has already broken, so the trade is live now")
+        o["sl"] = stop_loss(d, live, atr, ctx)
+        o["risk"] = abs(live - o["sl"])
+        o["tp"] = live + d * config.REWARD_R * o["risk"]
+        note = "stop already triggered -> market"
+    o["live_adjustment"] = note
+    return o
+
+
 def tp_probability(p_at_main: float, r: float) -> float:
     """Chance of reaching +r R before the stop, from the calibrated chance of reaching the main
     target (REWARD_R). With no edge, the chance of hitting +r before -1 is 1/(1+r) (a fair random

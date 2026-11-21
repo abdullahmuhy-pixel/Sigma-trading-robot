@@ -139,6 +139,15 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", progress=None, jo
         if "dir" in f:
             f["agrees"] = f.pop("dir") == best_d
     analog, agree = c["analog"], c["agree"]
+    try:   # the deep check takes a while: make the final order match the price NOW
+        say("Re-checking the order against the live price")
+        engine.apply_live(main, market.last_price(inst.name))
+        main["take_profits"] = [{**t, **{k: v for k, v in tc.items() if k in ("p_reach", "p_reach_model", "history_hits",
+                                                                                "expected_r_if_closed_here")}}
+                                for t, tc in zip(main["take_profits"], c["tps"])]
+        main["_sides"][best_d]["order"]["take_profits"] = main["take_profits"]
+    except Exception as e:
+        log.debug("live re-check failed: %s", e)
     if journal and not main.get("market_closed"):
         main["analysis_id"] = engine.record(main, source)
         if main["analysis_id"]:   # every analysis you ask for is paper-traded

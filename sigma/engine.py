@@ -149,6 +149,10 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
     events = sentiment.event_risk(inst)
     res = evaluate(inst.name, tf, df, htf, fund, news, events)
     res["source"] = source
+    try:
+        apply_live(res, market.last_price(inst.name))
+    except Exception as e:
+        log.debug("live price unavailable: %s", e)
     closed = market_closed(res["bar_time"], tf)
     if closed:
         res["market_closed"] = True
@@ -162,6 +166,25 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
         if res["analysis_id"] and (config.AUTO_PAPER_TRADE if open_trade is None else open_trade):
             from . import paper
             res["trade_id"] = paper.open_trade(res, source="live", entry_price=_live_entry(inst, res))
+    return res
+
+
+def apply_live(res: dict, live: float | None) -> dict:
+    """Make every order in an analysis match the live price (see plan.adjust_to_live)."""
+    if live is None or not res.get("_sides"):
+        return res
+    for d, sd in res["_sides"].items():
+        o = plan.adjust_to_live(sd["order"], live, res["atr"], res["context"])
+        if o is not sd["order"]:
+            plan.add_take_profits(o, sd["p"], sd["cost_r"])
+            sd["order"] = o
+        name = "buy" if d > 0 else "sell"
+        if res.get("both_sides", {}).get(name):
+            res["both_sides"][name].update(order_type=o["order_type"], entry=o["entry"], sl=o["sl"],
+                                           take_profits=o["take_profits"])
+    o = res["_sides"][res["direction"]]["order"]
+    res.update(plan=o, entry=o["entry"], sl=o["sl"], tp=o["tp"], take_profits=o["take_profits"], live_price=live)
+    res["explanation"] = plan.explain(res, learning.model().weights())
     return res
 
 
