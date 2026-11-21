@@ -195,6 +195,13 @@ def symbols(q: str = "", market: str = ""):
     return items
 
 
+@app.get("/api/resolve")
+def resolve_symbol(symbol: str):
+    """Deriv code for the chart's live price stream."""
+    i = resolve(symbol)
+    return {"name": i.name, "display": i.display, "deriv": i.deriv, "asset_class": i.asset_class}
+
+
 @app.get("/api/candles")
 def candles(symbol: str, timeframe: str = "H1", count: int = 300):
     try:

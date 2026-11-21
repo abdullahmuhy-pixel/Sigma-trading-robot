@@ -156,6 +156,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
       <button type="button" class="ghost" id="symbtn">🔍 <span id="symname">EUR/USD</span> ▾</button>
       <select id="tf"><option>M1</option><option>M5</option><option>M15</option><option selected>H1</option><option>H4</option><option>D1</option></select>
       <button id="analyze">Deep analysis</button>
+      <span id="livebadge" class="pill off">● connecting…</span>
       <span id="status"></span>
     </div>
     <div id="chart"></div>
@@ -241,7 +242,7 @@ const PAGES=['chat','chart','paper','markets'];
 function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.slice(1):'chat';
   document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+p));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
-  if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart()});
+  if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
   if(p==='paper')loadPaper();if(p==='markets')loadMarkets();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
 
@@ -286,12 +287,44 @@ const series=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',w
 let lines=[],chartLoaded=false,chartReq=0;
 const fit=()=>{const el=$('#chart');if(el.clientWidth)chart.applyOptions({width:el.clientWidth,height:el.clientHeight})};
 new ResizeObserver(fit).observe($('#chart'));
-async function loadChart(){const s=$('#sym').value,tf=$('#tf').value,my=++chartReq;$('#status').textContent='loading chart…';
+async function loadChart(){const s=$('#sym').value,tf=$('#tf').value,my=++chartReq;$('#status').textContent='loading chart…';stopLive();
   try{const c=await api(`/api/candles?symbol=${encodeURIComponent(s)}&timeframe=${tf}&count=300`);if(my!==chartReq)return;
-    series.setData(c);fit();chart.timeScale().fitContent();chartLoaded=true;
+    series.setData(c);fit();chart.timeScale().fitContent();chartLoaded=true;lastBar=c.length?{...c[c.length-1]}:null;
     const last=c.length?c[c.length-1].time:0,age=Date.now()/1000-last;
-    $('#status').textContent=c.length?(age>3*3600&&tf!=='D1'?'market closed · last candle '+fmtT(last):''):'no data'}
+    $('#status').textContent=c.length?(age>3*3600&&tf!=='D1'?'market closed · last candle '+fmtT(last):''):'no data';
+    startLive(s,tf,my)}
   catch(e){if(my===chartReq)$('#status').textContent='chart: '+e.message}}
+
+// ---------------- live price: stream straight from Deriv, every price change moves the current candle
+const TF_SECS={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
+const DERIV_WS=['wss://api.derivws.com/trading/v1/options/ws/public','wss://ws.derivws.com/websockets/v3?app_id=1089'];
+let live=null,lastBar=null,liveTick=0;
+function stopLive(){if(live){live.stopped=true;try{live.ws&&live.ws.close()}catch(e){}clearInterval(live.poll);clearTimeout(live.retry);live=null}}
+function liveBadge(text,ok){const el=$('#livebadge');if(el){el.textContent=text;el.className='pill '+(ok?'ok':'off')}}
+function applyCandle(t,o,h,l,c){t=+t;o=+o;h=+h;l=+l;c=+c;if(!isFinite(c))return;
+  if(lastBar&&t<lastBar.time)return;                       // never draw an older candle over a newer one
+  lastBar=(lastBar&&lastBar.time===t)?{time:t,open:lastBar.open,high:Math.max(lastBar.high,h,c),low:Math.min(lastBar.low,l,c),close:c}:{time:t,open:o,high:h,low:l,close:c};
+  series.update(lastBar);liveTick=Date.now();liveBadge('● LIVE '+(c<10?c.toFixed(5):c.toFixed(2)),true)}
+async function derivCode(sym){if(/^(frx|cry|R_|1HZ|BOOM|CRASH|JD|stpRNG|OTC_|WLD|RDBEAR|RDBULL)/.test(sym))return sym;
+  try{return (await api('/api/resolve?symbol='+encodeURIComponent(sym))).deriv}catch(e){return null}}
+async function startLive(sym,tf,my){const code=await derivCode(sym);if(my!==chartReq)return;
+  const L=live={stopped:false,ws:null,poll:null,retry:null,attempt:0};const gran=TF_SECS[tf];
+  const poll=()=>{L.poll=setInterval(async()=>{if(document.hidden)return;try{const c=await api(`/api/candles?symbol=${encodeURIComponent(sym)}&timeframe=${tf}&count=2`);
+      const b=c[c.length-1];if(b)applyCandle(b.time,b.open,b.high,b.low,b.close);liveBadge('● updating every 10 s',true)}catch(e){}},10000)};
+  if(!code||!('WebSocket' in window)){poll();return}
+  const connect=(i)=>{if(L.stopped)return;let ws;try{ws=new WebSocket(DERIV_WS[i%DERIV_WS.length])}catch(e){return fail(i)}L.ws=ws;let got=false;
+    ws.onopen=()=>ws.send(JSON.stringify({ticks_history:code,style:'candles',granularity:gran,count:1,end:'latest',adjust_start_time:1,subscribe:1}));
+    ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data)}catch(e){return}
+      if(m.error){ws.close();return}
+      if(m.ohlc){got=true;L.attempt=0;const o=m.ohlc;applyCandle(o.open_time,o.open,o.high,o.low,o.close)}
+      else if(m.candles&&m.candles.length){got=true;const b=m.candles[m.candles.length-1];applyCandle(b.epoch,b.open,b.high,b.low,b.close)}};
+    ws.onclose=()=>{if(L.stopped)return;if(!got)return fail(i);L.attempt++;L.retry=setTimeout(()=>connect(i),Math.min(30000,1000*2**L.attempt))};
+    ws.onerror=()=>{try{ws.close()}catch(e){}}};
+  const fail=(i)=>{if(L.stopped)return;if(i+1<DERIV_WS.length)return connect(i+1);liveBadge('● updating every 10 s',true);poll()};
+  connect(0)}
+// save battery: pause the stream while the app is in the background, resume when you come back
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLive();else if($('#page-chart').classList.contains('on')&&chartLoaded)startLive($('#sym').value,$('#tf').value,chartReq)});
+setInterval(()=>{if(live&&liveTick&&Date.now()-liveTick>90000)liveBadge('● waiting for prices (market may be quiet or closed)',false)},15000);
 function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
   const add=(p,c,t,st=0)=>p&&lines.push(series.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:st,title:t}));
   add(a.entry,'#5aa9ff',a.order_type);add(a.stop_loss,'#ef4444','SL');(a.take_profits||[]).forEach(t=>add(t.price,'#22c55e',t.name+' '+Math.round(t.p_reach*100)+'%'));(a.key_levels||[]).forEach(p=>add(p,'#3a4656','',2))}

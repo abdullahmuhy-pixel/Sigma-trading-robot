@@ -175,8 +175,21 @@ def closed_candles(name: str, tf: str, count: int = 500) -> pd.DataFrame:
     return df.iloc[-count:]
 
 
-def last_price(name: str) -> float:
-    return float(candles(name, "M1", 3)["close"].iloc[-1])
+def last_price(name: str, max_age: float = 2.0) -> float:
+    """The latest traded price, at most `max_age` seconds old (used for the final order check)."""
+    inst = resolve(name)
+
+    def load():
+        for provider, sym in _routes(inst):
+            if not sym:
+                continue
+            try:
+                return float(_FETCH[provider](sym, "M1", 2)["close"].iloc[-1])
+            except Exception:
+                continue
+        return float(candles(name, "M1", 3)["close"].iloc[-1])
+
+    return cached(f"last:{inst.name}", max_age, load)
 
 
 def history(name: str, tf: str, bars: int = 3000) -> pd.DataFrame:
