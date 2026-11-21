@@ -182,3 +182,17 @@ def test_postgres_translation():
     sch = db.pg_schema()
     assert "AUTOINCREMENT" not in sch and " REAL" not in sch and "BIGSERIAL PRIMARY KEY" in sch
     assert "DOUBLE PRECISION" in sch
+
+
+def test_closed_market_never_signals_or_trades(offline, monkeypatch):
+    from sigma.symbols import tf_seconds
+    friday = time.time() - 40 * 3600   # last candle 40 h ago, like a Saturday afternoon
+    monkeypatch.setattr(market, "candles",
+                        lambda s, tf, count=500: synth(tf_seconds(tf), count, end=friday, seed=3))
+    assert engine.market_closed(friday - 900, "M15") > 0
+    assert engine.market_closed(time.time() - 1800, "M15") == 0     # one fresh bar ago: open
+    live = engine.analyze("EURUSD", "M15", source="live")
+    assert live["market_closed"] and not live["is_signal"] and "analysis_id" not in live
+    chat = engine.analyze("EURUSD", "M15", source="chat")
+    assert chat["analysis_id"] and not chat.get("trade_id")
+    assert db.q1("SELECT COUNT(*) n FROM trades")["n"] == 0

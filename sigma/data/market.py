@@ -27,7 +27,7 @@ DERIV_PUBLIC_WS = "wss://api.derivws.com/trading/v1/options/ws/public"
 DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id={app_id}"
 
 _td_limit = RateLimiter(8)          # Twelve Data free plan: 8 credits / minute
-_deriv_lock = threading.Lock()
+_deriv_slots = threading.BoundedSemaphore(6)  # parallel Deriv connections (chart never waits for a scan)
 
 
 class DataError(RuntimeError):
@@ -57,7 +57,7 @@ def _deriv_request(payload: dict, timeout: float = 15) -> dict:
     last_err: Exception | None = None
     for url in (DERIV_PUBLIC_WS, DERIV_LEGACY_WS.format(app_id=config.DERIV_APP_ID)):
         try:
-            with _deriv_lock:
+            with _deriv_slots:
                 ws = websocket.create_connection(url, timeout=timeout)
                 try:
                     payload = {**payload, "req_id": 1}

@@ -126,12 +126,28 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
     events = sentiment.event_risk(inst)
     res = evaluate(inst.name, tf, df, htf, fund, news, events)
     res["source"] = source
+    closed = market_closed(res["bar_time"], tf)
+    if closed:
+        res["market_closed"] = True
+        res["is_signal"] = False
+        res["blocked_reason"] = f"market closed - last candle closed {closed / 3600:.1f} h ago"
+        if source == "live":
+            return res          # scheduled scans skip closed markets entirely
+        open_trade = False      # chat analysis is still shown and journalled, never traded
     if journal:
         res["analysis_id"] = record(res, source)
         if res["analysis_id"] and (config.AUTO_PAPER_TRADE if open_trade is None else open_trade):
             from . import paper
             res["trade_id"] = paper.open_trade(res, source="live", entry_price=_live_entry(inst, res))
     return res
+
+
+def market_closed(bar_time: float, tf: str, now: float | None = None) -> float:
+    """Seconds since the last candle closed, if that is long enough to mean the market
+    is shut (weekend, holiday); otherwise 0."""
+    age = (now or time.time()) - (bar_time + tf_seconds(tf))
+    limit = max(3 * tf_seconds(tf), 3600) if tf != "D1" else 3 * 86400
+    return age if age > limit else 0.0
 
 
 def _live_entry(inst: Instrument, res: dict) -> float:

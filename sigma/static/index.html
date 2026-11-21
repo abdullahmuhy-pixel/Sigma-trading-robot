@@ -41,7 +41,7 @@ button:disabled{opacity:.5;cursor:wait}
 #right{display:flex;flex-direction:column;min-height:0;overflow:auto}
 .bar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 select,input{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit}
-#chart{height:380px;border-bottom:1px solid var(--line)}
+#chart{height:380px;border-bottom:1px solid var(--line);overflow:hidden}
 #card{padding:12px 14px;border-bottom:1px solid var(--line);display:none}
 .sig{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 .kv{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
@@ -154,13 +154,13 @@ async function status(){try{const s=await api('/api/status');
 status();setInterval(status,10000);
 
 // ---------------- chat (synced across devices through the server)
-let lastId=0, pending=[], busy=false;
+let lastId=0, pending=[], busy=false, greeted=false;
 function addMsg(role,text,tools){const d=document.createElement('div');d.className='msg '+(role==='user'?'user':'bot');
   d.innerHTML=role==='user'?esc(text).replace(/\n/g,'<br>'):DOMPurify.sanitize(marked.parse(text||''));
   if(tools&&tools.length){const t=document.createElement('div');t.className='tools';t.textContent='tools: '+tools.map(x=>x.tool).join(', ');d.appendChild(t)}
   $('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d}
 async function syncChat(){try{const rows=await api('/api/chat/history?after_id='+lastId+(lastId?'':'&limit=80'));
-  if(!lastId&&!rows.length)addMsg('bot','Hi, I\'m **Sigma**. Ask me to analyse any market, scan the watchlist, explain the news, or **review a trade you are thinking of taking** (you can attach a chart screenshot too).');
+  if(!lastId&&!rows.length&&!greeted&&(greeted=true))addMsg('bot','Hi, I\'m **Sigma**. Ask me to analyse any market, scan the watchlist, explain the news, or **review a trade you are thinking of taking** (you can attach a chart screenshot too).');
   rows.forEach(m=>{if(m.id>lastId){addMsg(m.role,m.content);lastId=m.id}});
   $('#syncpill').textContent='synced '+new Date().toLocaleTimeString('en-ZA',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});$('#syncpill').className='pill ok'}
   catch(e){$('#syncpill').textContent='offline';$('#syncpill').className='pill off'}}
@@ -186,7 +186,7 @@ syncChat();setInterval(()=>{if(!busy)syncChat()},4000);
 // ---------------- mobile navigation & install
 document.body.classList.add('v-chat');
 document.querySelectorAll('#mnav div').forEach(n=>n.onclick=()=>{document.querySelectorAll('#mnav div').forEach(x=>x.classList.remove('on'));n.classList.add('on');
-  document.body.classList.remove('v-chat','v-markets');document.body.classList.add('v-'+n.dataset.v);if(n.dataset.v==='markets'){chart.applyOptions({width:$('#chart').clientWidth});loadChart()}});
+  document.body.classList.remove('v-chat','v-markets');document.body.classList.add('v-'+n.dataset.v);if(n.dataset.v==='markets'){requestAnimationFrame(()=>{fit();loadChart()})}});
 let installEvt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;$('#install').style.display='inline-block'});
 $('#install').onclick=async()=>{if(installEvt){installEvt.prompt();await installEvt.userChoice;installEvt=null;$('#install').style.display='none'}};
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -196,8 +196,15 @@ const chart=LightweightCharts.createChart($('#chart'),{layout:{background:{color
   grid:{vertLines:{color:'#151c26'},horzLines:{color:'#151c26'}},timeScale:{timeVisible:true,borderColor:'#243041'},
   rightPriceScale:{borderColor:'#243041'},localization:{timeFormatter:t=>fmtT(t)}});
 const series=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444',borderVisible:false});
-let lines=[];new ResizeObserver(()=>chart.applyOptions({width:$('#chart').clientWidth,height:380})).observe($('#chart'));
-async function loadChart(){const s=$('#sym').value,tf=$('#tf').value;try{const c=await api(`/api/candles?symbol=${encodeURIComponent(s)}&timeframe=${tf}&count=300`);series.setData(c);chart.timeScale().fitContent()}catch(e){$('#provider').textContent=e.message}}
+let lines=[];const fit=()=>{const el=$('#chart');if(el.clientWidth)chart.applyOptions({width:el.clientWidth,height:el.clientHeight||380})};
+new ResizeObserver(fit).observe($('#chart'));
+let chartReq=0;
+async function loadChart(){const s=$('#sym').value,tf=$('#tf').value,my=++chartReq;$('#provider').textContent='loading '+s+' '+tf+'…';
+  try{const c=await api(`/api/candles?symbol=${encodeURIComponent(s)}&timeframe=${tf}&count=300`);if(my!==chartReq)return;
+    series.setData(c);fit();chart.timeScale().fitContent();
+    const last=c.length?c[c.length-1].time:0,age=Date.now()/1000-last;
+    $('#provider').textContent=c.length?(age>3*3600&&tf!=='D1'?'market closed · last candle '+fmtT(last):''):'no data'}
+  catch(e){if(my===chartReq)$('#provider').textContent='chart: '+e.message}}
 function drawLevels(a){lines.forEach(l=>series.removePriceLine(l));lines=[];
   const add=(p,c,t,st=0)=>p&&lines.push(series.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:st,title:t}));
   add(a.entry,'#5aa9ff','entry');add(a.stop_loss,'#ef4444','SL');add(a.take_profit,'#22c55e','TP');
