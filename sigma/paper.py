@@ -164,7 +164,24 @@ def activate_pending() -> None:
                 upd.update(sl=px - t["direction"] * risk, tp=px + t["direction"] * config.REWARD_R * risk)
             db.update("trades", t["id"], upd)
         elif now >= deadline:
-            db.update("trades", t["id"], {"status": "cancelled", "closed_at": now})
+            db.update("trades", t["id"], missed_or_cancelled(t, bars, now))
+
+
+def missed_or_cancelled(t: dict, bars: pd.DataFrame, now: float) -> dict:
+    """An unfilled order is 'missed' when price still went the predicted way by at least 1R
+    (measured from the planned entry) - the direction was right but the entry never came."""
+    d, risk = t["direction"], abs(t["entry"] - t["sl"])
+    if risk <= 0 or bars is None or not len(bars):
+        return {"status": "cancelled", "closed_at": now}
+    # how far beyond the planned entry price travelled in the trade's direction (a buy stop that was
+    # never triggered stays below its entry, so it scores 0 and is simply cancelled)
+    fav = (float(bars["high"].max()) - t["entry"]) if d > 0 else (t["entry"] - float(bars["low"].min()))
+    move = max(fav, 0.0) / risk
+    if move >= 1.0:
+        return {"status": "missed", "closed_at": now, "missed_r": round(move, 2),
+                "lesson": (f"Missed: price moved {move:.1f}R the predicted way without reaching the "
+                           f"{t.get('order_type', 'order').lower()} at {t['entry']:.5g}. Direction right, entry too far.")}
+    return {"status": "cancelled", "closed_at": now, "missed_r": round(move, 2)}
 
 
 def monitor_once() -> list[dict]:

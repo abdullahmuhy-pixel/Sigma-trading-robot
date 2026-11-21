@@ -52,7 +52,8 @@ How you work:
   (default H1 for intraday, H4 for swing).
 - When the user sends a chart screenshot, read the instrument, timeframe and any drawn levels from it, say what you
   see, then verify everything with live data through tools before giving a view.
-- Users can review their own past trades with my_trades.
+- Users can review their own past trades with my_trades. For "were your signals right?" use signal_journal; be
+  honest about wrong calls and missed entries (direction right, entry never reached), and what was changed because of them.
 - Goals: when the user tells you their real balance and a daily/weekly/monthly target, call set_account_goal,
   then explain goal_plan honestly: required return, wins needed, the simulated chance of success and of a
   drawdown, and every warning. When they ask for trades to reach the goal, call find_trades_for_goal and give
@@ -148,6 +149,10 @@ TOOLS = [
      "so goal progress and their balance stay up to date.",
      "input_schema": {"type": "object", "properties": {"amount": {"type": "number"}, "note": {"type": "string"}},
                       "required": ["amount"]}},
+    {"name": "signal_journal", "description": "The journal of every signal and analysis with its grade (was the call "
+     "right or wrong by how the market moved), order outcomes including MISSED entries (price went the right way but "
+     "never reached the limit/stop), and accuracy by side, timeframe, market and order type.",
+     "input_schema": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
     {"name": "open_paper_trades", "description": "Currently open paper trades.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "run_backtest", "description": "Walk-forward backtest on history; also trains the learning model. Can take a minute.",
@@ -185,6 +190,7 @@ def compact(res: dict) -> dict:
         "direction": "LONG" if res["direction"] > 0 else "SHORT",
         "order_type": res["plan"]["order_type"], "setup_type": res["plan"]["setup_type"],
         "order_reason": res["plan"]["order_reason"],
+        "live_price": _r(res.get("live_price")), "live_adjustment": res["plan"].get("live_adjustment"),
         "pending_order_expires_after_candles": res["plan"]["pending_bars"] or None,
         "explanation": res.get("explanation"),
         "take_profits": [{"name": t["name"], "price": _r(t["price"]), "r": t["r"], "p_reach": _r(t["p_reach"], 3),
@@ -293,6 +299,11 @@ def run_tool(name: str, args: dict) -> object:
         from . import goals
         goals.log_result(args["amount"], args.get("note", ""))
         return goals.plan()
+    if name == "signal_journal":
+        from . import journal
+        return {"accuracy": journal.call_accuracy(), "signals_only": journal.call_accuracy(signals_only=True),
+                "orders": journal.order_stats(cache_seconds=0),
+                "recent": [{**r, "created_at": _local(r["created_at"])} for r in journal.recent(int(args.get("limit", 25)))]}
     if name == "open_paper_trades":
         return [{**t, "opened_at": _local(t["opened_at"]), "expires_at": _local(t["expires_at"])}
                 for t in paper.open_positions()[:40]]
@@ -326,6 +337,8 @@ def learning_report(symbol: str | None = None) -> dict:
         "recent_lessons": [{**l, "closed_at": _local(l["closed_at"])} for l in lessons],
         "live_signal_performance": learning.performance("live"),
         "long_vs_short": learning.direction_balance(),
+        "call_accuracy": __import__("sigma.journal", fromlist=["x"]).call_accuracy(),
+        "order_fill_stats": __import__("sigma.journal", fromlist=["x"]).order_stats(),
     }
 
 

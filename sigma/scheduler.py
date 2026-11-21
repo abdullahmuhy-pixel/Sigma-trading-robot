@@ -56,6 +56,8 @@ def _monitor() -> None:
             closed = paper.monitor_once()
             if closed:
                 log.info("resolved %d paper trades", len(closed))
+            from . import journal
+            journal.grade_pending()
         except Exception as e:
             _err(f"monitor: {e}")
         state["last_monitor"] = time.time()

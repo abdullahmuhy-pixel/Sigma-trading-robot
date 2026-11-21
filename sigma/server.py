@@ -351,6 +351,13 @@ def set_goal(body: GoalIn):
     return goals.plan()
 
 
+@app.get("/api/journal")
+def signal_journal(limit: int = 150):
+    from . import journal
+    return {"accuracy": journal.call_accuracy(), "signal_accuracy": journal.call_accuracy(signals_only=True),
+            "orders": journal.order_stats(cache_seconds=0), "entries": journal.recent(limit)}
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

@@ -41,7 +41,11 @@ CREATE TABLE IF NOT EXISTS analyses (
     components TEXT,                -- json {name: score}
     features TEXT,                  -- json {name: signed feature}
     notes TEXT,                     -- json list of strings
-    blocked_reason TEXT
+    blocked_reason TEXT,
+    call_result TEXT,               -- journal grade: right | wrong | flat | unclear
+    call_move_r REAL,               -- furthest move in the called direction (R) before the grade
+    call_adverse_r REAL,            -- furthest move against it (R)
+    graded_at REAL
 );
 CREATE INDEX IF NOT EXISTS ix_an_sym ON analyses(symbol, timeframe, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_an_bar ON analyses(symbol, timeframe, source, bar_time)
@@ -64,6 +68,7 @@ CREATE TABLE IF NOT EXISTS trades (
     demo INTEGER DEFAULT 0,                -- 1 = traded on the demo account (paper money)
     risk_amount REAL,                      -- money at risk on the demo account
     units REAL,                            -- position size on the demo account
+    missed_r REAL,                         -- unfilled order: how far price moved the predicted way anyway
     note TEXT,
     exit_price REAL,
     closed_at REAL,
@@ -127,7 +132,9 @@ def to_pg(sql: str) -> str:
 MIGRATIONS = [("analyses", "raw_probability", "REAL"), ("trades", "origin", "TEXT NOT NULL DEFAULT 'robot'"),
               ("trades", "note", "TEXT"), ("trades", "order_type", "TEXT DEFAULT 'MARKET'"),
               ("trades", "fill_by", "REAL"), ("trades", "demo", "INTEGER DEFAULT 0"),
-              ("trades", "risk_amount", "REAL"), ("trades", "units", "REAL")]
+              ("trades", "risk_amount", "REAL"), ("trades", "units", "REAL"), ("trades", "missed_r", "REAL"),
+              ("analyses", "call_result", "TEXT"), ("analyses", "call_move_r", "REAL"),
+              ("analyses", "call_adverse_r", "REAL"), ("analyses", "graded_at", "REAL")]
 
 
 def _migrate(execute_fn, pg: bool) -> None:

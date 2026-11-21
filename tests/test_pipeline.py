@@ -325,3 +325,17 @@ def test_deep_tp_odds_blend_history(offline, monkeypatch):
     other = "sell" if chosen == "buy" else "buy"
     b = out["both_sides"]
     assert (b[chosen]["qualifies"], round(b[chosen]["expected_r"], 9)) >= (b[other]["qualifies"], round(b[other]["expected_r"], 9))
+
+
+def test_journal_grades_and_reports(offline):
+    from sigma import journal
+    res = engine.analyze("EURUSD", "H1", source="chat")
+    db.update("analyses", res["analysis_id"], {"created_at": time.time() - 3600, "bar_time": time.time() - 40 * 3600})
+    assert journal.grade_pending() == 1
+    a = db.q1("SELECT call_result, call_move_r FROM analyses WHERE id=?", (res["analysis_id"],))
+    assert a["call_result"] in ("right", "wrong", "flat", "unclear") and a["call_move_r"] is not None
+    acc = journal.call_accuracy()
+    assert acc["overall"]["graded"] == 1 and set(acc["by_side"]) <= {"buy", "sell"}
+    st = journal.order_stats(cache_seconds=0)
+    assert set(st) == {"MARKET", "LIMIT", "STOP"}
+    assert journal.recent()[0]["id"] == res["analysis_id"]

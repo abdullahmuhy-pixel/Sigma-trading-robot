@@ -61,6 +61,11 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     comps["news"] = float((news or {}).get("score", 0.0))
     regime = tech["regime"]
 
+    try:
+        from .journal import order_stats
+        fill_stats = order_stats()
+    except Exception:
+        fill_stats = None
     # Open-minded: build the COMPLETE case for both a buy and a sell - order plan, costs,
     # filters, take-profit odds - and only then let the facts pick the side.
     event_block = None
@@ -71,7 +76,7 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     for d in (1, -1):
         raw_d = m.prob(comps, regime, d)
         p_d = m.calibrate(raw_d)
-        order_d = plan.order(d, tech["price"], tech["atr"], tech["context"], comps, regime)
+        order_d = plan.order(d, tech["price"], tech["atr"], tech["context"], comps, regime, fill_stats)
         risk_d = abs(order_d["entry"] - order_d["sl"]) or 1e-12
         cost_d = cost_in_price(inst, order_d["entry"]) / risk_d
         exp_d = m.expectancy(p_d) - cost_d

@@ -390,3 +390,55 @@ def test_order_follows_live_price_users_btc_case():
     assert plan.adjust_to_live(stp, 59900.0, atr=600.0, ctx={})["order_type"] == "SELL"
     # small moves (under a quarter ATR) leave the plan alone
     assert plan.adjust_to_live(o, 60250.0, atr=600.0, ctx={})["order_type"] == "SELL"
+
+
+def _bars(rows, start="2025-01-01"):
+    idx = pd.date_range(start, periods=len(rows), freq="1h", tz="UTC")
+    return pd.DataFrame(rows, columns=["open", "high", "low", "close"], index=idx)
+
+
+def test_call_grading_rules():
+    from sigma.journal import grade_call
+    far = 1e12
+    up = _bars([(100, 100.5, 99.6, 100.4), (100.4, 101.2, 100.2, 101.0)])
+    assert grade_call(1, 100, 1.0, up, far)["call_result"] == "right"        # +1R first
+    assert grade_call(-1, 100, 1.0, up, far)["call_result"] == "wrong"     # the sell call lost 1R first
+    down = _bars([(100, 100.3, 98.9, 99.0)])
+    assert grade_call(1, 100, 1.0, down, far)["call_result"] == "wrong"
+    assert grade_call(-1, 100, 1.0, down, far)["call_result"] == "right"
+    both = _bars([(100, 101.5, 98.5, 100)])
+    assert grade_call(1, 100, 1.0, both, far)["call_result"] == "unclear"
+    quiet = _bars([(100, 100.4, 99.7, 100.1)] * 3)
+    assert grade_call(1, 100, 1.0, quiet, far) is None                       # window still open: wait
+    assert grade_call(1, 100, 1.0, quiet, quiet.index[-1].timestamp() + 1)["call_result"] == "flat"
+
+
+def test_missed_limit_is_recorded():
+    from sigma.paper import missed_or_cancelled
+    sell_limit = {"direction": -1, "entry": 60314.40, "sl": 61753.06, "order_type": "SELL LIMIT"}
+    # price never came back up to 60,314 but fell to 58,500: the call was right, the entry missed
+    fell = _bars([(59810, 59900, 59200, 59300), (59300, 59350, 58500, 58600)])
+    out = missed_or_cancelled(sell_limit, fell, 0)
+    assert out["status"] == "missed" and out["missed_r"] == pytest.approx((60314.40 - 58500) / 1438.66, abs=0.01)
+    assert "Direction right" in out["lesson"]
+    # price drifted sideways: simply cancelled
+    flat = _bars([(59810, 59900, 59700, 59800)])
+    assert missed_or_cancelled(sell_limit, flat, 0)["status"] == "cancelled"
+    # an untriggered buy stop is a plain cancel
+    buy_stop = {"direction": 1, "entry": 101.0, "sl": 99.0, "order_type": "BUY STOP"}
+    assert missed_or_cancelled(buy_stop, _bars([(100, 100.8, 99.5, 100.2)]), 0)["status"] == "cancelled"
+
+
+def test_planner_learns_from_missed_limits():
+    from sigma import plan
+    base = {"ema20": 100.0, "nearest_support": None, "nearest_resistance": None,
+            "last_swing_low": None, "last_swing_high": None}
+    comps = {"trend": 0.6, "structure": 0.5, "mean_reversion": 0.0}
+    normal = plan.order(1, 101.4, 1.0, base, comps, "trending", {"LIMIT": {"placed": 30, "miss_rate": 0.1}})
+    assert normal["order_type"] == "BUY LIMIT" and normal["entry"] == pytest.approx(100.05)
+    shallow = plan.order(1, 101.4, 1.0, base, comps, "trending", {"LIMIT": {"placed": 30, "miss_rate": 0.4}})
+    assert shallow["order_type"] == "BUY LIMIT" and shallow["entry"] == pytest.approx(100.7)
+    market = plan.order(1, 101.4, 1.0, base, comps, "trending", {"LIMIT": {"placed": 30, "miss_rate": 0.6}})
+    assert market["order_type"] == "BUY"
+    few = plan.order(1, 101.4, 1.0, base, comps, "trending", {"LIMIT": {"placed": 5, "miss_rate": 0.9}})
+    assert few["entry"] == pytest.approx(100.05)        # not enough evidence to change anything

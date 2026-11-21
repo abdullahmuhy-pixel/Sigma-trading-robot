@@ -175,11 +175,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 
   <section class="page" id="page-markets"><div class="wrap">
     <div class="tabs">
-      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="signals">All signals</div>
+      <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
       <div class="tab" data-s="perf">Robot performance</div><div class="tab" data-s="learn">Learning</div>
       <div class="tab" data-s="bt">Backtest</div><div class="tab" data-s="cal">Calendar</div>
     </div>
     <div class="sub on" id="s-opps"></div>
+    <div class="sub" id="s-journal"></div>
     <div class="sub" id="s-signals"></div>
     <div class="sub" id="s-perf"></div>
     <div class="sub" id="s-learn"></div>
@@ -289,6 +290,7 @@ function showCard(a){const ex=a.explanation||{},d=a.deep||{},buy=a.direction==='
     <div><span class="big ${buy?'long':'short'}">${esc(a.order_type)}</span> <span class="big">${esc(a.symbol)}</span> <span class="muted">${a.timeframe} · ${esc(a.setup_type)} · ${esc(a.regime)}</span></div>
     <div class="${a.is_signal?'long':'muted'}" style="font-weight:700">${a.is_signal?'CONFIRMED SIGNAL':'NOT A SIGNAL - lean only'}</div></div>
   ${a.blocked_reason?`<p class="warn">Held back: ${esc(a.blocked_reason)}</p>`:''}
+  ${a.live_price?`<p class="muted">Live price when the analysis finished: <b>${fx(a.live_price)}</b>${a.live_adjustment?` · order ${esc(a.live_adjustment)} to match it`:''}</p>`:''}
   <div class="grid4">${kv('Entry',fx(a.entry))}${kv('Stop loss',fx(a.stop_loss),'short')}${kv('P(win) at main TP',pct(a.p_win_calibrated))}${kv('Expected R',fx(a.expected_R_after_costs,2),cls(a.expected_R_after_costs))}</div>
   <div class="box"><h4>Take profits - choose where to close</h4><div class="scroll">${table([['TP',t=>`<b>${t.name}</b>${t.main?' <span class="muted">(main)</span>':''}`],['Price',t=>`<span class="long">${fx(t.price)}</span>`],['Reward',t=>t.r+'R'],
      ['Chance to reach',t=>`<b>${pct(t.p_reach)}</b>`],['Expected R if you close here',t=>`<span class="${cls(t.expected_r_if_closed_here)}">${fx(t.expected_r_if_closed_here,2)}</span>`],['Past look-alikes that got there',t=>t.history_hits||'–']],a.take_profits||[])}</div>
@@ -373,6 +375,17 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelect
 async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.s;try{
  if(on==='opps'){const al=await api('/api/alerts');$('#s-opps').innerHTML=al.length?al.slice().reverse().map(x=>`<div class="box"><div class="muted">${fmtT(x.created_at)}</div>${DOMPurify.sanitize(marked.parse(x.body))}</div>`).join('')
    :'<p class="muted">The robot scans the watchlist at every candle close. When it finds a signal and a deep analysis confirms it, the opportunity appears here, in the chat, and as a notification (tap 🔔 to allow notifications).</p>'}
+ if(on==='journal'){const j=await api('/api/journal');const A=j.accuracy,S=j.signal_accuracy,O=j.orders;
+   const accRow=(name,x)=>[name,x];
+   const resTxt=r=>r==='right'?'<span class="long">✓ right</span>':r==='wrong'?'<span class="short">✗ wrong</span>':r?esc(r):'<span class="muted">grading…</span>';
+   const stTxt=r=>r.status==='missed'?`<span class="warn">missed (+${fx(r.missed_r,1)}R)</span>`:r.status==='won'?`<span class="long">won ${fx(r.r_multiple,2)}R</span>`:r.status==='lost'?`<span class="short">lost ${fx(r.r_multiple,2)}R</span>`:esc(r.status||'–');
+   $('#s-journal').innerHTML=`<p class="muted">Every signal and every analysis you run is graded by what the market did next: <b>right</b> if price moved 1R (one stop-distance) the called way before 1R against it, <b>wrong</b> if the opposite, <b>flat</b> if neither. <b>Missed</b> = an unfilled limit/stop where price still went the called way.</p>
+   <div class="grid4">${kv('Call accuracy (all)',pct(A.overall.accuracy)+` <span class="muted">${A.overall.right}/${A.overall.right+A.overall.wrong}</span>`)}${kv('Signals only',pct(S.overall.accuracy)+` <span class="muted">${S.overall.right}/${S.overall.right+S.overall.wrong}</span>`)}
+    ${kv('Limit fill rate',pct(O.LIMIT.fill_rate))}${kv('Limits missed',pct(O.LIMIT.miss_rate))}${kv('Stop fill rate',pct(O.STOP.fill_rate))}${kv('Flat calls',A.overall.flat)}</div>
+   <h3>Accuracy by side, timeframe and order</h3><div class="scroll">${table([['Group',r=>esc(r[0])],['Graded',r=>r[1].graded],['Right',r=>r[1].right],['Wrong',r=>r[1].wrong],['Accuracy',r=>pct(r[1].accuracy)]],
+     [...Object.entries(A.by_side).map(([k,v])=>['side: '+k,v]),...Object.entries(A.by_timeframe).map(([k,v])=>['timeframe: '+k,v]),...Object.entries(A.by_order).map(([k,v])=>['order: '+k,v])])}</div>
+   <h3>Entries</h3><div class="scroll">${table([['Time',r=>fmtT(r.created_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Call',r=>dirTxt(r.direction,r.order_type)],['Type',r=>r.is_signal?'signal':(r.source==='chat'?'you asked':'lean')],['Entry',r=>fx(r.entry)],
+     ['Grade',r=>resTxt(r.call_result)],['Best move',r=>r.call_move_r==null?'':fx(r.call_move_r,1)+'R'],['Order result',r=>stTxt(r)],['Note',r=>esc(r.lesson||'')]],j.entries,'No entries yet.')}</div>`}
  if(on==='signals'){const s=await api('/api/signals?limit=80');$('#s-signals').innerHTML='<div class="scroll">'+table([['Time',r=>fmtT(r.created_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Order',r=>dirTxt(r.direction,r.order_type)],['Entry',r=>fx(r.entry)],['SL',r=>fx(r.sl)],['TP',r=>fx(r.tp)],['P(win)',r=>pct(r.probability)],['E[R]',r=>fx(r.expectancy,2)],['Result',r=>r.status==='open'||r.status==='pending'?esc(r.status):r.r_multiple==null?'–':`<span class="${cls(r.r_multiple)}">${esc(r.status)} ${fx(r.r_multiple,2)}R</span>`]],s,'No signals yet.')+'</div>'}
  if(on==='perf'){const p=await api('/api/performance');const st=x=>kv('Trades',x.trades)+kv('Win rate',pct(x.win_rate))+kv('Expectancy',fx(x.expectancy_r,2)+'R')+kv('Total',fx(x.total_r,1)+'R')+kv('Profit factor',fx(x.profit_factor,2))+kv('Max drawdown',fx(x.max_drawdown_r,1)+'R');
    $('#s-perf').innerHTML=`<h3>Live signals</h3><div class="grid4">${st(p.live_signals)}</div><h3>All live analyses (incl. shadow trades)</h3><div class="grid4">${st(p.live_all)}</div><h3>Backtest signals (walk-forward)</h3><div class="grid4">${st(p.backtest_signals)}</div>

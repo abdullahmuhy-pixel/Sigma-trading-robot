@@ -41,7 +41,11 @@ def stop_loss(direction: int, entry: float, atr: float, ctx: dict) -> float:
     return sl
 
 
-def order(direction: int, price: float, atr: float, ctx: dict, comps: dict, regime: str) -> dict:
+LIMIT_MIN_SAMPLES = 15
+
+
+def order(direction: int, price: float, atr: float, ctx: dict, comps: dict, regime: str,
+          fill_stats: dict | None = None) -> dict:
     d = direction
     ema20 = ctx.get("ema20")
     sup, res = ctx.get("nearest_support"), ctx.get("nearest_resistance")
@@ -60,11 +64,16 @@ def order(direction: int, price: float, atr: float, ctx: dict, comps: dict, regi
         kind, why = "STOP", (f"price is pressing against {'resistance' if d > 0 else 'support'} at {_fmt(ahead)}; "
                              f"the order only fills if it breaks through, which confirms the move")
         setup = "Breakout"
-    elif pull is not None and (extension > 1.0 or stretched_with_trade):
-        entry = pull + d * 0.05 * atr
+    elif pull is not None and (extension > 1.0 or stretched_with_trade) and _limit_mode(fill_stats) != "market":
         lvl = "EMA20" if ema20 is not None and abs(pull - ema20) < 1e-12 else ("support" if d > 0 else "resistance")
-        kind, why = "LIMIT", (f"price has already run {extension:.1f} ATR from its average; waiting for a pullback "
-                              f"to {lvl} at {_fmt(pull)} gives a better price and a tighter stop")
+        if _limit_mode(fill_stats) == "shallow":   # learned: deep limits kept missing good moves
+            entry = price + 0.5 * (pull - price)
+            kind, why = "LIMIT", (f"price has run {extension:.1f} ATR from its average; the journal shows deep limit "
+                                  f"entries often missed the move, so this limit sits halfway to {lvl} ({_fmt(pull)})")
+        else:
+            entry = pull + d * 0.05 * atr
+            kind, why = "LIMIT", (f"price has already run {extension:.1f} ATR from its average; waiting for a pullback "
+                                  f"to {lvl} at {_fmt(pull)} gives a better price and a tighter stop")
         setup = "Trend pullback" if comps.get("trend", 0) * d > 0 else "Pullback entry"
     else:
         entry = price
@@ -147,6 +156,18 @@ def add_take_profits(order: dict, p_main: float, cost_r: float = 0.0) -> dict:
                     "main": abs(r - config.REWARD_R) < 1e-9})
     order["take_profits"] = tps
     return tps
+
+
+def _limit_mode(fill_stats: dict | None) -> str:
+    """normal / shallow / market, learned from how often limit orders missed moves."""
+    st = (fill_stats or {}).get("LIMIT") or {}
+    if (st.get("placed") or 0) < LIMIT_MIN_SAMPLES or st.get("miss_rate") is None:
+        return "normal"
+    if st["miss_rate"] >= 0.55:
+        return "market"
+    if st["miss_rate"] >= 0.35:
+        return "shallow"
+    return "normal"
 
 
 def _setup_type(d: int, comps: dict) -> str:
