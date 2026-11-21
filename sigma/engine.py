@@ -7,7 +7,7 @@ import time
 
 import pandas as pd
 
-from . import config, db, learning
+from . import config, db, learning, plan
 from .analysis import fundamental, sentiment, technical
 from .data import market
 from .symbols import HIGHER_TF, Instrument, resolve, tf_seconds
@@ -68,7 +68,8 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     p_long, p_short = m.calibrate(raw_long), m.calibrate(raw_short)
     p = m.calibrate(raw_p)
 
-    entry, sl, tp = trade_levels(direction, tech["price"], tech["atr"], tech["context"])
+    order = plan.order(direction, tech["price"], tech["atr"], tech["context"], comps, regime)
+    entry, sl, tp = order["entry"], order["sl"], order["tp"]
     risk = abs(entry - sl) or 1e-12
     cost_r = cost_in_price(inst, entry) / risk
     exp_r = m.expectancy(p) - cost_r
@@ -81,11 +82,13 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     g = learning.gated(setup_key, stats)
     if g:
         blocked = f"setup switched off by learning ({g['n']} signals, {g['shrunk_expectancy']:+.2f}R)"
+    if abs(raw_long - raw_short) < 1e-6:   # evidence perfectly balanced: no side is preferred
+        blocked = blocked or "no directional edge: buy and sell evidence are equal"
     is_signal = (p >= config.MIN_PROBABILITY and exp_r >= config.MIN_EXPECTANCY_R and not blocked)
 
     raw = sum(learning.PRIOR_BASE[k] * comps[k] for k in learning.PRIOR_BASE) / sum(learning.PRIOR_BASE.values())
     notes = list(tech["notes"]) + list((fund or {}).get("notes", []))
-    return {
+    res = {
         "symbol": inst.name, "display": inst.display, "asset_class": inst.asset_class, "timeframe": tf,
         "bar_time": df.index[-1].timestamp(), "created_at": now or time.time(),
         "price": tech["price"], "atr": tech["atr"], "regime": regime, "adx": tech["adx"],
@@ -95,8 +98,10 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
         "is_signal": bool(is_signal), "blocked_reason": blocked, "setup_key": setup_key,
         "components": comps, "context": tech["context"], "notes": notes,
         "fundamental": fund, "news": news, "events": events,
-        "provider": df.attrs.get("provider"),
+        "provider": df.attrs.get("provider"), "plan": order,
     }
+    res["explanation"] = plan.explain(res, m.weights())
+    return res
 
 
 def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = True,

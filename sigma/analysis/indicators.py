@@ -90,7 +90,7 @@ def supertrend(df: pd.DataFrame, n: int = 10, mult: float = 3.0) -> pd.Series:
     upper, lower = (hl2 + mult * a).to_numpy(), (hl2 - mult * a).to_numpy()
     close = df["close"].to_numpy()
     fu, fl = upper.copy(), lower.copy()
-    direction = np.ones(len(df))
+    direction = np.zeros(len(df))  # 0 until price first breaks a band: no default side
     for i in range(1, len(df)):
         if np.isnan(upper[i]) or np.isnan(fu[i - 1]):
             continue
@@ -181,15 +181,14 @@ def rsi_divergence(df: pd.DataFrame, r: pd.Series, lookback: int = 40) -> int:
     sub = df.iloc[-lookback:]
     rs = r.iloc[-lookback:].to_numpy()
     highs, lows = swings(sub, 3, 2)
+    bull = bear = False
     if len(lows) >= 2:
         (i1, p1), (i2, p2) = lows[-2], lows[-1]
-        if p2 < p1 and rs[i2] > rs[i1] and len(sub) - i2 <= 8:
-            return 1
+        bull = p2 < p1 and rs[i2] > rs[i1] and len(sub) - i2 <= 8
     if len(highs) >= 2:
         (i1, p1), (i2, p2) = highs[-2], highs[-1]
-        if p2 > p1 and rs[i2] < rs[i1] and len(sub) - i2 <= 8:
-            return -1
-    return 0
+        bear = p2 > p1 and rs[i2] < rs[i1] and len(sub) - i2 <= 8
+    return int(bull) - int(bear)  # both at once cancel out instead of favouring one side
 
 
 def percentile_rank(s: pd.Series, window: int = 200) -> float:

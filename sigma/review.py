@@ -77,7 +77,9 @@ def review_trade(symbol: str, timeframe: str, direction: str, entry: float, stop
     if high_soon:
         issues.append("High-impact news within 6h: " + "; ".join(f"{e['currency']} {e['title']}" for e in high_soon[:3]))
     dist_atr = abs(price - entry) / atr if atr else 0
-    order = "market" if dist_atr <= 0.25 else ("limit" if (entry - price) * d < 0 else "stop")
+    kind = "MARKET" if dist_atr <= 0.25 else ("LIMIT" if (entry - price) * d < 0 else "STOP")
+    side = "BUY" if d > 0 else "SELL"
+    order = side if kind == "MARKET" else f"{side} {kind}"
 
     if exp_r >= config.MIN_EXPECTANCY_R and agrees and not high_soon:
         verdict = "GOOD - the numbers support this trade"
@@ -94,7 +96,8 @@ def review_trade(symbol: str, timeframe: str, direction: str, entry: float, stop
             "source": "live", "origin": "user", "direction": d, "entry": entry, "sl": stop_loss,
             "tp": take_profit, "opened_at": now,
             "expires_at": now + config.MAX_HOLD_BARS * tf_seconds(res["timeframe"]),
-            "status": "open" if order == "market" else "pending", "setup_key": res["setup_key"], "note": note,
+            "status": "open" if kind == "MARKET" else "pending", "setup_key": res["setup_key"], "note": note,
+            "order_type": order, "fill_by": None if kind == "MARKET" else now + config.MAX_HOLD_BARS * tf_seconds(res["timeframe"]),
         })
 
     return {
@@ -110,7 +113,7 @@ def review_trade(symbol: str, timeframe: str, direction: str, entry: float, stop
                        "regime": res["regime"]},
         "component_scores_for_your_direction": {k: round(v * d, 2) for k, v in res["components"].items()},
         "issues": issues, "notes": res["notes"],
-        "tracking": (f"Tracked as paper trade #{trade_id} ({'waiting for price to reach entry' if order != 'market' else 'live now'}); "
+        "tracking": (f"Tracked as paper trade #{trade_id} ({'waiting for price to reach entry' if kind != 'MARKET' else 'live now'}); "
                      "I'll grade it when it closes.") if trade_id else "Not tracked.",
         "your_track_record": learning.performance("live", origin="user"),
     }

@@ -27,8 +27,16 @@ How you work:
   (e.g. conflicting higher timeframe, news risk) but never upgrade one.
 - Quote the robot's track record (performance / learning_report) when giving a signal, so the user sees
   how reliable this kind of setup has been. If a setup has few results, call it "unproven".
-- Present signals as: Pair & timeframe | Direction | Entry | Stop loss | Take profit | P(win) | Expected R |
-  Key reasons (technical, fundamental, news) | Risks / invalidation | Upcoming events.
+- Present every analysis in this order, in plain language a trader can act on:
+  1. Headline: instrument, timeframe, ORDER TYPE (BUY, SELL, BUY LIMIT, SELL LIMIT, BUY STOP or SELL STOP),
+     setup type, and whether it is a confirmed SIGNAL or only a lean.
+  2. Levels: entry, stop loss, take profit, reward:risk, P(win) vs break-even, expected R after costs.
+  3. Why this direction: the top reasons from explanation.for, each with its actual reading (EMA levels, RSI,
+     structure, the higher timeframe, fundamentals, news) - explain what each means for price.
+  4. What argues against it: explanation.against, honestly.
+  5. Why this order type: order_reason (e.g. why wait for a pullback with a limit, or a breakout with a stop),
+     and that an unfilled pending order is cancelled after the stated number of candles.
+  6. Invalidation and upcoming high-impact events.
 - If there is no signal, say so plainly and what would change your mind.
 - When the user describes a trade they are considering ("I want to buy EURUSD at 1.0850, SL 1.0820, TP 1.0920"),
   call review_trade with their exact numbers and give a clear verdict, the probability vs break-even win rate,
@@ -130,6 +138,10 @@ def compact(res: dict) -> dict:
         "bar_closed": _local(res["bar_time"]), "data_source": res.get("provider"),
         "regime": res["regime"], "adx": _r(res["adx"], 1), "atr": _r(res["atr"]),
         "direction": "LONG" if res["direction"] > 0 else "SHORT",
+        "order_type": res["plan"]["order_type"], "setup_type": res["plan"]["setup_type"],
+        "order_reason": res["plan"]["order_reason"],
+        "pending_order_expires_after_candles": res["plan"]["pending_bars"] or None,
+        "explanation": res.get("explanation"),
         "is_signal": res["is_signal"], "blocked_reason": res["blocked_reason"],
         "market_closed": res.get("market_closed", False),
         "p_win_calibrated": _r(res["probability"], 3), "p_long": _r(res["p_long"], 3), "p_short": _r(res["p_short"], 3),
@@ -234,6 +246,7 @@ def learning_report(symbol: str | None = None) -> dict:
         "insights": learning.insights(),
         "recent_lessons": [{**l, "closed_at": _local(l["closed_at"])} for l in lessons],
         "live_signal_performance": learning.performance("live"),
+        "long_vs_short": learning.direction_balance(),
     }
 
 

@@ -280,7 +280,7 @@ def performance(source: str | None = "live", signals_only: bool = True, symbol: 
         sql += " AND a.is_signal=1"
     rows = db.q(sql + " ORDER BY t.closed_at", params)
     return summarize([r["r_multiple"] for r in rows]) | {
-        "open": db.q1("SELECT COUNT(*) n FROM trades WHERE status='open' AND origin=?" +
+        "open": db.q1("SELECT COUNT(*) n FROM trades WHERE status IN ('open','pending') AND origin=?" +
                       (" AND source=?" if source else ""), [origin] + ([source] if source else []))["n"]}
 
 
@@ -322,4 +322,24 @@ def insights(limit: int = 8) -> list[str]:
                        + (" - SWITCHED OFF" if gated(k, stats) else ""))
         if len(out) >= limit:
             break
+    return out
+
+
+def direction_balance(source: str = "live", last: int = 200) -> dict:
+    """Long vs short signals and how each side performed. A big imbalance is only a problem
+    if markets were not actually trending that way - so the trend of the analysed markets is shown too."""
+    rows = db.q("SELECT a.direction, a.components, t.r_multiple FROM analyses a LEFT JOIN trades t "
+                "ON t.analysis_id=a.id AND t.origin='robot' WHERE a.source=? AND a.is_signal=1 "
+                "ORDER BY a.created_at DESC LIMIT ?", (source, last))
+    out = {}
+    for side, d in (("long", 1), ("short", -1)):
+        rs = [r["r_multiple"] for r in rows if r["direction"] == d and r["r_multiple"] is not None]
+        out[side] = {"signals": sum(1 for r in rows if r["direction"] == d), **summarize(rs)}
+    n = len(rows)
+    trend = [db.decode(r)["components"].get("htf_trend", 0) for r in rows]
+    out["long_share"] = (out["long"]["signals"] / n) if n else None
+    out["markets_trending_up_share"] = (sum(1 for t in trend if t > 0) / n) if n else None
+    out["note"] = ("Balanced." if not n or 0.3 <= out["long_share"] <= 0.7 else
+                   "One-sided signals. Compare with markets_trending_up_share: if markets were trending the same "
+                   "way, this is the market, not a bias.")
     return out

@@ -151,9 +151,9 @@ def test_review_user_trade(offline):
     assert "error" in review.review_trade("EURUSD", "H1", "sell", 1.1, 1.09, 1.08)
     # far-away limit order stays pending until price reaches it, then expires -> cancelled
     far = review.review_trade("EURUSD", "H1", "buy", float(price) * 0.5, float(price) * 0.49, float(price) * 0.52)
-    assert far["your_trade"]["order_type"] == "limit"
+    assert far["your_trade"]["order_type"] == "BUY LIMIT"
     pid = db.q1("SELECT id FROM trades WHERE status='pending'")["id"]
-    db.update("trades", pid, {"expires_at": time.time() - 1})
+    db.update("trades", pid, {"fill_by": time.time() - 1})
     paper.activate_pending()
     assert db.q1("SELECT status FROM trades WHERE id=?", (pid,))["status"] == "cancelled"
     # user trades never enter the robot's learning data

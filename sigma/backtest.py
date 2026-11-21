@@ -15,7 +15,7 @@ import pandas as pd
 from . import config, db, learning
 from .data import market
 from .engine import cost_in_price, evaluate, resample_htf
-from .paper import simulate
+from .paper import fill_index, simulate
 from .symbols import resolve, tf_seconds
 
 log = logging.getLogger("sigma.backtest")
@@ -76,17 +76,27 @@ def run(symbol: str, tf: str, bars: int = 3000, df: pd.DataFrame | None = None,
             log.debug("bar %s skipped: %s", i, e)
             continue
 
-        entry = float(df["open"].iloc[i + 1])     # fill at next bar's open
         d = res["direction"]
         risk = abs(res["entry"] - res["sl"])
+        pl = res["plan"]
+        start = i + 1
+        if pl["kind"] == "MARKET":
+            entry = float(df["open"].iloc[i + 1])     # fill at next bar's open
+        else:                                          # pending order: fills only if price gets there in time
+            hit = fill_index(d, pl["kind"], res["entry"], df.iloc[i + 1:i + 1 + pl["pending_bars"]])
+            if hit is None:
+                _progress[key]["done"] = i - WINDOW
+                continue                               # cancelled: no trade, nothing to learn from
+            start, entry = i + 1 + hit[0], hit[1]
         sl, tp = entry - d * risk, entry + d * config.REWARD_R * risk
-        expires = now + config.MAX_HOLD_BARS * secs
-        future = df.iloc[i + 1:i + 2 + config.MAX_HOLD_BARS]
+        opened = times[start]
+        expires = opened + config.MAX_HOLD_BARS * secs
+        future = df.iloc[start:start + 1 + config.MAX_HOLD_BARS]
         cost_r = cost_in_price(inst, entry) / max(risk, 1e-12)
         out = simulate(d, entry, sl, tp, future, expires, cost_r)
         if out is None:
             break  # ran out of future data
-        trade = {**out, "direction": d, "entry": entry, "sl": sl, "tp": tp, "opened_at": now,
+        trade = {**out, "direction": d, "entry": entry, "sl": sl, "tp": tp, "opened_at": opened,
                  "expires_at": expires, "res": res}
         pending.append(trade)
         _progress[key]["done"] = i - WINDOW
@@ -128,6 +138,7 @@ def _store(results: list[dict]) -> None:
             "analysis_id": aid, "symbol": res["symbol"], "timeframe": res["timeframe"], "source": "backtest",
             "direction": t["direction"], "entry": t["entry"], "sl": t["sl"], "tp": t["tp"],
             "opened_at": t["opened_at"], "expires_at": t["expires_at"], "status": t["status"],
+            "order_type": res["plan"]["order_type"],
             "exit_price": t["exit_price"], "closed_at": t["closed_at"], "r_multiple": t["r_multiple"],
             "mfe_r": t["mfe_r"], "mae_r": t["mae_r"], "setup_key": res["setup_key"], "learned": 1,
         })

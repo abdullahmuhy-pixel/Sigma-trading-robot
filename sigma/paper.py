@@ -27,17 +27,37 @@ def open_trade(res: dict, source: str = "live", entry_price: float | None = None
     if dup:
         return 0
     d = res["direction"]
-    entry = entry_price if entry_price is not None else res["entry"]
+    pl = res.get("plan") or {"kind": "MARKET", "order_type": "BUY" if d > 0 else "SELL", "pending_bars": 0}
     risk = abs(res["entry"] - res["sl"])
+    opened = opened_at or time.time()
+    secs = tf_seconds(res["timeframe"])
+    if pl["kind"] == "MARKET":   # fill now at the live price, keeping the planned risk distance
+        entry = entry_price if entry_price is not None else res["entry"]
+        status, fill_by = "open", None
+    else:                        # limit / stop: wait for price to reach the planned entry
+        entry, status, fill_by = res["entry"], "pending", opened + pl["pending_bars"] * secs
     sl = entry - d * risk
     tp = entry + d * config.REWARD_R * risk
-    opened = opened_at or time.time()
     return db.insert("trades", {
         "analysis_id": res["analysis_id"], "symbol": res["symbol"], "timeframe": res["timeframe"],
         "source": source, "direction": d, "entry": entry, "sl": sl, "tp": tp,
-        "opened_at": opened, "expires_at": opened + config.MAX_HOLD_BARS * tf_seconds(res["timeframe"]),
-        "status": "open", "setup_key": res["setup_key"],
+        "opened_at": opened, "expires_at": (fill_by or opened) + config.MAX_HOLD_BARS * secs,
+        "status": status, "setup_key": res["setup_key"], "order_type": pl["order_type"], "fill_by": fill_by,
     })
+
+
+def fill_index(direction: int, kind: str, entry: float, bars: pd.DataFrame) -> tuple[int, float] | None:
+    """First bar where a pending order fills, and the fill price (gaps fill at the open for stops,
+    and a gap through a limit fills at the better open price)."""
+    for i, (_, b) in enumerate(bars.iterrows()):
+        o, hi, lo = float(b["open"]), float(b["high"]), float(b["low"])
+        if kind == "LIMIT":
+            if (direction > 0 and lo <= entry) or (direction < 0 and hi >= entry):
+                return i, (min(o, entry) if direction > 0 else max(o, entry))
+        else:  # STOP
+            if (direction > 0 and hi >= entry) or (direction < 0 and lo <= entry):
+                return i, (max(o, entry) if direction > 0 else min(o, entry))
+    return None
 
 
 def simulate(direction: int, entry: float, sl: float, tp: float, bars: pd.DataFrame,
@@ -82,22 +102,46 @@ def _resolution_tf(trade_tf: str, age_s: float) -> str:
     return trade_tf
 
 
+def _kind(order_type: str | None, direction: int, entry: float, ref_price: float | None) -> str:
+    if order_type and order_type.endswith("LIMIT"):
+        return "LIMIT"
+    if order_type and order_type.endswith("STOP"):
+        return "STOP"
+    if ref_price is None:
+        return "LIMIT"
+    # user orders without a stored type: below price = buy limit, above = buy stop (mirrored for sells)
+    return "LIMIT" if (entry - ref_price) * direction < 0 else "STOP"
+
+
 def activate_pending() -> None:
-    """Pending user orders become open when price trades through the entry."""
+    """Pending limit/stop orders become open trades when price reaches the entry;
+    unfilled ones are cancelled at their deadline."""
     now = time.time()
-    for t in db.q("SELECT * FROM trades WHERE status='pending'"):
-        if now >= t["expires_at"]:
-            db.update("trades", t["id"], {"status": "cancelled", "closed_at": now})
-            continue
+    for t in db.q("SELECT t.*, a.price ref_price FROM trades t LEFT JOIN analyses a ON a.id=t.analysis_id "
+                  "WHERE t.status='pending'"):
+        deadline = t.get("fill_by") or t["expires_at"]
         try:
             bars = market.candles(t["symbol"], "M1", min(int((now - t["opened_at"]) / 60) + 3, 5000))
         except Exception as e:
             log.warning("pending %s: %s", t["symbol"], e)
+            if now >= deadline:
+                db.update("trades", t["id"], {"status": "cancelled", "closed_at": now})
             continue
-        bars = bars[bars.index.map(lambda x: x.timestamp() + 60) > t["opened_at"]]
-        hit = bars[(bars["low"] <= t["entry"]) & (bars["high"] >= t["entry"])]
-        if len(hit):
-            db.update("trades", t["id"], {"status": "open", "opened_at": hit.index[0].timestamp()})
+        ts = bars.index.map(lambda x: x.timestamp())
+        bars = bars[(ts + 60 > t["opened_at"]) & (ts < deadline)]
+        hit = fill_index(t["direction"], _kind(t.get("order_type"), t["direction"], t["entry"], t.get("ref_price")),
+                         t["entry"], bars)
+        if hit:
+            i, px = hit
+            fill_t = bars.index[i].timestamp()
+            risk = abs(t["entry"] - t["sl"])
+            upd = {"status": "open", "opened_at": fill_t, "entry": px,
+                   "expires_at": fill_t + config.MAX_HOLD_BARS * tf_seconds(t["timeframe"])}
+            if t.get("origin") != "user":  # robot orders keep their planned risk; your own SL/TP stay exactly as you set them
+                upd.update(sl=px - t["direction"] * risk, tp=px + t["direction"] * config.REWARD_R * risk)
+            db.update("trades", t["id"], upd)
+        elif now >= deadline:
+            db.update("trades", t["id"], {"status": "cancelled", "closed_at": now})
 
 
 def monitor_once() -> list[dict]:

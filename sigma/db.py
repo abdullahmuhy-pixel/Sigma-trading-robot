@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS trades (
     expires_at REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',   -- pending | open | won | lost | expired | cancelled
     origin TEXT NOT NULL DEFAULT 'robot',  -- robot | user (a trade you asked Sigma to review)
+    order_type TEXT DEFAULT 'MARKET',      -- BUY, SELL, BUY LIMIT, SELL LIMIT, BUY STOP, SELL STOP
+    fill_by REAL,                          -- a pending order not filled by then is cancelled
     note TEXT,
     exit_price REAL,
     closed_at REAL,
@@ -109,6 +111,24 @@ def to_pg(sql: str) -> str:
     return sql
 
 
+# columns added after the first release: added to existing databases on start-up
+MIGRATIONS = [("analyses", "raw_probability", "REAL"), ("trades", "origin", "TEXT NOT NULL DEFAULT 'robot'"),
+              ("trades", "note", "TEXT"), ("trades", "order_type", "TEXT DEFAULT 'MARKET'"),
+              ("trades", "fill_by", "REAL")]
+
+
+def _migrate(execute_fn, pg: bool) -> None:
+    for table, col, decl in MIGRATIONS:
+        if pg:
+            decl = re.sub(r"\bREAL\b", "DOUBLE PRECISION", decl)
+            execute_fn(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {decl}")
+        else:
+            try:
+                execute_fn(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            except Exception:
+                pass  # already there
+
+
 def backend() -> str:
     return _backend
 
@@ -128,12 +148,15 @@ def connect(path: str | None = None):
                 for stmt in pg_schema().split(";"):
                     if stmt.strip():
                         cur.execute(stmt)
+                _migrate(cur.execute, True)
             _conn.commit()
         else:
             _conn = sqlite3.connect(str(path or config.DB_PATH), check_same_thread=False)
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            _migrate(_conn.execute, False)
+            _conn.commit()
             _backend = "sqlite"
         return _conn
 

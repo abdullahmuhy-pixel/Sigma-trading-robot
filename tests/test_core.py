@@ -192,7 +192,7 @@ def test_symbols():
 # -------------------------------------------------------------- engine ----
 def test_evaluate_and_backtest_pipeline():
     db.connect(os.environ["SIGMA_DB"])
-    df = gbm(900, seed=7)
+    df = gbm(1500, seed=7)
     res = evaluate("EURUSD", "H1", df.iloc[:400])
     assert res["direction"] in (1, -1) and 0 < res["probability"] < 1
     assert res["setup_key"].startswith("EURUSD|H1|")
@@ -201,7 +201,7 @@ def test_evaluate_and_backtest_pipeline():
 
     from sigma import backtest
     rep = backtest.run("EURUSD", "H1", df=df, refit_every=100)
-    assert rep["analyses"] > 400
+    assert rep["analyses"] > 700
     n_db = db.q1("SELECT COUNT(*) n FROM trades WHERE source='backtest'")["n"]
     assert n_db == rep["analyses"]
     # every stored R must be consistent with its exit price
@@ -215,3 +215,81 @@ def test_evaluate_and_backtest_pipeline():
     # random walk: no real edge, so calibration must learn to distrust the model
     assert m.meta["calib"][1] < learning.CALIB_SLOPE0
     assert rep["signals_second_half"]["trades"] < rep["signals"]["trades"] / 2
+
+
+def mirror(df):
+    C = 2 * df["close"].mean()
+    return pd.DataFrame({"open": C - df["open"], "high": C - df["low"], "low": C - df["high"],
+                         "close": C - df["close"], "volume": df["volume"]}, index=df.index)
+
+
+def test_no_directional_bias_mirror():
+    """Flip a chart upside down: every score must flip and the decision must reverse
+    with exactly the same probability. Any built-in lean would break this."""
+    from sigma import engine
+    for seed in range(12):
+        for drift in (0.0, 0.0015, -0.0015):
+            df = gbm(420, seed=seed, drift=drift)
+            a, b = technical.analyze(df), technical.analyze(mirror(df))
+            for k in a["components"]:
+                assert a["components"][k] == pytest.approx(-b["components"][k], abs=1e-9), k
+            ra = engine.evaluate("EURUSD", "H1", df, engine.resample_htf(df, "H1"))
+            rb = engine.evaluate("EURUSD", "H1", mirror(df), engine.resample_htf(mirror(df), "H1"))
+            assert ra["direction"] == -rb["direction"]
+            assert ra["probability"] == pytest.approx(rb["probability"], abs=1e-9)
+
+
+def test_balanced_evidence_is_not_a_signal():
+    from sigma import engine
+    flat = make_df([100.0 + 0.0 * i for i in range(400)], spread=0.5)
+    r = engine.evaluate("EURUSD", "H1", flat)
+    assert not r["is_signal"]
+
+
+def test_order_types_are_chosen_by_rule_and_mirror():
+    from sigma import plan
+    atr = 1.0
+    base = {"ema20": 100.0, "nearest_support": None, "nearest_resistance": None,
+            "last_swing_low": None, "last_swing_high": None}
+    comps = {"trend": 0.6, "structure": 0.5, "mean_reversion": 0.0}
+    # resistance 0.4 ATR above in a trending market -> BUY STOP just beyond it
+    o = plan.order(1, 100.5, atr, {**base, "nearest_resistance": 100.9}, comps, "trending")
+    assert o["order_type"] == "BUY STOP" and o["entry"] == pytest.approx(101.0)
+    # mirror: support 0.4 ATR below, bearish evidence -> SELL STOP
+    neg = {k: -v for k, v in comps.items()}
+    o = plan.order(-1, 99.5, atr, {**base, "nearest_support": 99.1}, neg, "trending")
+    assert o["order_type"] == "SELL STOP" and o["entry"] == pytest.approx(99.0)
+    # price ran 1.4 ATR above EMA20 -> BUY LIMIT back near the EMA
+    o = plan.order(1, 101.4, atr, base, comps, "trending")
+    assert o["order_type"] == "BUY LIMIT" and o["entry"] == pytest.approx(100.05)
+    o = plan.order(-1, 98.6, atr, base, neg, "trending")
+    assert o["order_type"] == "SELL LIMIT" and o["entry"] == pytest.approx(99.95)
+    # nothing nearby -> market order
+    o = plan.order(1, 100.2, atr, base, comps, "trending")
+    assert o["order_type"] == "BUY" and o["kind"] == "MARKET"
+    # ranging market: no breakout orders
+    o = plan.order(1, 100.5, atr, {**base, "nearest_resistance": 100.9}, comps, "ranging")
+    assert "STOP" not in o["order_type"]
+    # every plan keeps reward = REWARD_R x risk from ITS entry
+    assert abs(o["tp"] - o["entry"]) == pytest.approx(config.REWARD_R * abs(o["entry"] - o["sl"]))
+
+
+def test_pending_fill_rules():
+    from sigma.paper import fill_index
+    idx = pd.date_range("2025-01-01", periods=3, freq="1h", tz="UTC")
+    bars = pd.DataFrame({"open": [100, 99.5, 98.0], "high": [100.4, 99.8, 98.5], "low": [99.6, 99.2, 97.5],
+                         "close": [99.6, 99.3, 98.2]}, index=idx)
+    assert fill_index(1, "LIMIT", 99.3, bars) == (1, 99.3)       # buy limit touched on bar 1
+    assert fill_index(1, "LIMIT", 98.8, bars) == (2, 98.0)       # gapped below: filled at the better open
+    assert fill_index(-1, "STOP", 98.8, bars) == (2, 98.0)       # sell stop gapped through: filled at the open
+    assert fill_index(1, "STOP", 101.0, bars) is None            # never reached: stays unfilled
+
+
+def test_signal_explanation_is_complete():
+    from sigma import engine
+    r = engine.evaluate("EURUSD", "H1", gbm(400, seed=5, drift=-0.002))
+    ex = r["explanation"]
+    side = "SELL" if r["direction"] < 0 else "BUY"
+    assert side in ex["summary"] and r["plan"]["order_type"] in ex["summary"]
+    assert ex["for"] and all(c["impact"] > 0 for c in ex["for"]) and all(c["impact"] < 0 for c in ex["against"])
+    assert "stop loss" in ex["invalidation"]

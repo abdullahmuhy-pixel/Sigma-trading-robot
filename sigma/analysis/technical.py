@@ -29,7 +29,8 @@ def trend_score(df: pd.DataFrame) -> tuple[float, dict]:
     if len(e50.dropna()) > 10 and a:
         parts.append(math.tanh((e50.iloc[-1] - e50.iloc[-11]) / a))
     st = ta.supertrend(df).iloc[-1]
-    parts.append(st)
+    if st != 0:
+        parts.append(st)
     parts = [p for p in parts if not np.isnan(p)]
     return _clip(float(np.mean(parts)) if parts else 0.0), {
         "ema20": float(e20.iloc[-1]), "ema50": float(e50.iloc[-1]),
