@@ -36,19 +36,25 @@ def currency_pairs(currencies=("JPY", "USD", "EUR", "GBP"), extra=()) -> list[st
     return [p for p in major if p in want] + sorted(p for p in want if p not in major)
 
 
-ALL_TIMEFRAMES = ["M5", "M15", "M30", "H1", "H4", "D1"]
+SETUP_TIMEFRAMES = ["M15", "H1", "H4"]   # entries, main trading timeframe, bigger swings / direction
 
 
 def apply_default_setup_once() -> bool:
-    """One-time setup (24 Nov 2026, at the user's request): every JPY, USD, EUR and GBP pair plus gold
-    and silver, with every timeframe ticked. Runs once; later edits in the app are kept."""
-    if db.kv_get("setup_fx_metals_v1"):
-        return False
-    preset("fx_metals")
-    set_timeframes(ALL_TIMEFRAMES)
-    set_enabled(True)
-    db.kv_set("setup_fx_metals_v1", {"at": __import__("time").time()})
-    return True
+    """One-time setup at the user's request (24 Nov 2026): every JPY, USD, EUR and GBP pair plus gold
+    and silver (v1), scanned on M15, H1 and H4 (v2 - replaced 'every timeframe'). Each step runs once;
+    later edits in the app are kept."""
+    import time as _t
+    changed = False
+    if not db.kv_get("setup_fx_metals_v1"):
+        preset("fx_metals")
+        set_enabled(True)
+        db.kv_set("setup_fx_metals_v1", {"at": _t.time()})
+        changed = True
+    if not db.kv_get("setup_timeframes_v2"):
+        set_timeframes(SETUP_TIMEFRAMES)
+        db.kv_set("setup_timeframes_v2", {"at": _t.time()})
+        changed = True
+    return changed
 
 
 def preset(name: str) -> dict:

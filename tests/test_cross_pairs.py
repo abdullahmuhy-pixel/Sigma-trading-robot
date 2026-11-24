@@ -72,7 +72,17 @@ def test_one_time_setup(deriv):
     db.connect(os.path.join(tempfile.mkdtemp(), "s.db"))
     assert watchlist.apply_default_setup_once()
     w = watchlist.get()
-    assert w["timeframes"] == ["M5", "M15", "M30", "H1", "H4", "D1"] and w["enabled"]
+    assert w["timeframes"] == ["M15", "H1", "H4"] and w["enabled"]
     assert {"CHFJPY", "CADJPY", "EURJPY", "USDJPY", "XAUUSD", "XAGUSD"} <= set(w["symbols"])
     watchlist.set_timeframes(["H1"])                                         # your later edits are kept
     assert not watchlist.apply_default_setup_once() and watchlist.get()["timeframes"] == ["H1"]
+
+
+def test_timeframe_fix_after_first_setup(deriv):
+    db.connect(os.path.join(tempfile.mkdtemp(), "s2.db"))
+    db.kv_set("setup_fx_metals_v1", {"at": 1})                  # the first setup already ran (all timeframes)
+    watchlist.set_symbols(["EURUSD", "CHFJPY"])
+    watchlist.set_timeframes(["M5", "M15", "M30", "H1", "H4", "D1"])
+    assert watchlist.apply_default_setup_once()
+    w = watchlist.get()
+    assert w["timeframes"] == ["M15", "H1", "H4"] and w["symbols"] == ["EURUSD", "CHFJPY"]   # markets untouched
