@@ -539,6 +539,12 @@ def bot_trades(limit: int = 100, account: str | None = None):
     return {"trades": rows, "stats": review.stats(acct), "learning": review.learning()}
 
 
+@app.get("/api/sources")
+def data_sources():
+    from .data import sources
+    return sources.check_all()
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

@@ -107,9 +107,14 @@ TOOLS = [
     {"name": "economic_calendar", "description": "This week's economic events, optionally for some currencies.",
      "input_schema": {"type": "object", "properties": {"currencies": {"type": "array", "items": {"type": "string"}},
                                                        "impact": {"type": "string", "enum": ["High", "Medium", "Low", "any"]}}}},
+    {"name": "data_sources", "description": "Live check of every data source Sigma uses (Deriv prices, calendar "
+     "and hours, Binance, Twelve Data, Myfxbook, IG, Hyperliquid, Kraken, OKX): which work from the server right now "
+     "and which are not set up. Takes ~10-20 seconds.",
+     "input_schema": {"type": "object", "properties": {}}},
     {"name": "crowd_positioning", "description": "Where retail traders are positioned in an instrument "
-     "(Myfxbook community outlook and IG client sentiment): % long/short, average crowd entry prices, and the "
-     "contrarian reading. Works for forex, metals and IG markets; empty if no source is connected.",
+     "(Myfxbook community outlook and IG client sentiment) and, for crypto, futures positioning (funding rates, "
+     "open interest change, OKX long/short accounts): % long/short, average crowd entry prices, and the "
+     "contrarian reading. Empty if no source is available.",
      "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "market_hours", "description": "Official Deriv trading hours for an instrument: open now or not, "
      "minutes until it closes or opens, and any special events today (early closes, holidays).",
@@ -295,6 +300,9 @@ def run_tool(name: str, args: dict) -> object:
         imp = args.get("impact", "any")
         return [{**e, "time": _local(e["time"])} for e in news.calendar()
                 if (not ccys or e["currency"] in ccys) and (imp in (None, "any") or e["impact"] == imp)][:60]
+    if name == "data_sources":
+        from .data import sources
+        return sources.check_all()
     if name == "crowd_positioning":
         from .data import positioning
         out = positioning.analyze(args["symbol"])

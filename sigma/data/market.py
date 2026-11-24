@@ -117,7 +117,7 @@ def binance_candles(symbol: str, tf: str, count: int = 500, end_ms: int | None =
     if end_ms:
         params["endTime"] = end_ms
     last = None
-    for host in ("https://api.binance.com", "https://data-api.binance.vision"):
+    for host in ("https://data-api.binance.vision", "https://api.binance.com"):
         try:
             js = get_json(f"{host}/api/v3/klines", params)
             rows = [{"time": k[0] / 1000, "open": k[1], "high": k[2], "low": k[3],

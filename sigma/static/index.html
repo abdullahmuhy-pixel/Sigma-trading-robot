@@ -196,7 +196,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
     <div class="tabs">
       <div class="tab on" data-s="opps">Opportunities</div><div class="tab" data-s="watch">Watchlist</div><div class="tab" data-s="sessions">Sessions</div><div class="tab" data-s="journal">Journal</div><div class="tab" data-s="signals">All signals</div>
       <div class="tab" data-s="perf">Robot performance</div><div class="tab" data-s="learn">Learning</div>
-      <div class="tab" data-s="bt">Backtest</div><div class="tab" data-s="cal">Calendar</div>
+      <div class="tab" data-s="bt">Backtest</div><div class="tab" data-s="cal">Calendar</div><div class="tab" data-s="src">Sources</div>
     </div>
     <div class="sub on" id="s-opps"></div>
     <div class="sub" id="s-watch"></div>
@@ -213,6 +213,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
       <div id="btprog"></div>
     </div>
     <div class="sub" id="s-cal"></div>
+    <div class="sub" id="s-src"></div>
   </div></section>
   <section class="page" id="page-bot"><div class="wrap">
     <div class="bar" style="padding:12px 0;border:0"><span class="big">Auto bot</span><span id="bstate" class="state stop">stopped</span>
@@ -556,6 +557,13 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
    <h3>Best setups</h3>${table([['Setup',r=>esc(r.setup)],['n',r=>r.n],['Win',r=>pct(r.win_rate)],['Exp R',r=>fx(r.expectancy,2)]],L.best_setups)}
    <h3>Worst setups</h3>${table([['Setup',r=>esc(r.setup)],['n',r=>r.n],['Win',r=>pct(r.win_rate)],['Exp R',r=>fx(r.expectancy,2)]],L.worst_setups)}`}
  if(on==='bt'){const p=await api('/api/backtest/progress');$('#btprog').innerHTML=Object.entries(p).map(([k,v])=>`<div class="kv" style="margin:6px 0">${esc(k)}: ${esc(v.status)} ${v.total?Math.round(100*v.done/v.total)+'%':''}</div>`).join('')}
+ if(on==='src'){$('#s-src').innerHTML='<p class="muted">Checking every data source from the server… (10–20 s)</p>';
+   const r=await api('/api/sources');const names={deriv_prices:'Deriv prices',deriv_calendar:'Deriv economic calendar',deriv_trading_hours:'Deriv trading hours',
+     binance_spot:'Binance (crypto prices)',twelvedata:'Twelve Data',myfxbook:'Myfxbook crowd',ig_sentiment:'IG client sentiment',
+     hyperliquid:'Hyperliquid (crypto funding / open interest)',kraken:'Kraken Futures (crypto funding / open interest)',okx:'OKX (crypto long/short)'};
+   const rows=Object.entries(r).filter(([k])=>k!=='checked_at').map(([k,v])=>({k,...v}));
+   $('#s-src').innerHTML='<div class="scroll">'+table([['Source',x=>esc(names[x.k]||x.k)],['Status',x=>x.ok===true?'<span class="long">working</span>':x.ok===false?'<span class="short">not reachable</span>':'<span class="muted">not set up</span>'],
+     ['Time',x=>x.ms!=null?x.ms+' ms':''],['Details',x=>esc(x.error||x.note||(x.markets?x.markets+' markets':''))]],rows)+'</div><p class="muted">Sources that fail are skipped automatically; Sigma uses whatever works.</p>'}
  if(on==='cal'){const c=await api('/api/calendar');$('#s-cal').innerHTML='<div class="scroll">'+table([['Time (SAST)',r=>fmtT(r.time)],['Ccy',r=>esc(r.currency)],['Impact',r=>`<span class="${r.impact==='High'?'short':''}">${esc(r.impact)}</span>`],['Event',r=>esc(r.title)],['Forecast',r=>esc(r.forecast)],['Previous',r=>esc(r.previous)],['Actual',r=>esc(r.actual)]],c.filter(e=>e.time>Date.now()/1000-86400))+'</div>'}
 }catch(e){document.querySelector('.sub.on').innerHTML='<p class="short">'+esc(e.message)+'</p>'}}
 // ---------------- watchlist & session editors: change on screen instantly, save in the background

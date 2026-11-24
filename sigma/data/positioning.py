@@ -193,10 +193,19 @@ def analyze(name: str) -> dict:
     ig = ig_sentiment(inst.name)
     if ig:
         sources["ig"] = ig
+    derivs = None
+    if inst.asset_class == "crypto":
+        from . import crypto_derivs
+        derivs = crypto_derivs.analyze(inst.name)
     if not sources:
+        if derivs:
+            return {"score": derivs["score"], "sources": {"futures": derivs}, "notes": derivs["notes"]}
         return {"score": 0.0, "sources": {}, "notes": []}
     long_pct = sum(s["long_pct"] for s in sources.values()) / len(sources)
     score = contrarian_score(long_pct)
+    if derivs:                                   # crypto: retail crowd and futures positioning, equally
+        score = (score + derivs["score"]) / 2
+        sources["futures"] = derivs
     notes = [f"Retail crowd {long_pct:.0f}% long / {100 - long_pct:.0f}% short "
              f"({' + '.join({'myfxbook': 'Myfxbook', 'ig': 'IG'}[k] for k in sources)}): "
              + ("crowded long - contrarian bearish" if score <= -0.4 else
@@ -204,6 +213,8 @@ def analyze(name: str) -> dict:
     if mfx and mfx.get("avg_long_price") and mfx.get("avg_short_price"):
         notes.append(f"Average crowd entries: longs {mfx['avg_long_price']}, shorts {mfx['avg_short_price']} "
                      "(trapped traders' stops often sit beyond these)")
+    if derivs:
+        notes += derivs["notes"]
     return {"score": round(score, 3), "long_pct": round(long_pct, 1), "sources": sources, "notes": notes}
 
 
