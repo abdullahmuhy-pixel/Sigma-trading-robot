@@ -79,6 +79,44 @@ def _deriv_request(payload: dict, timeout: float = 15) -> dict:
     raise DataError(f"Deriv unavailable: {last_err}")
 
 
+def deriv_probe(payload: dict, timeout: float = 15) -> list[dict]:
+    """Diagnostics: send one request to EACH Deriv endpoint and report what came back (shape, not data)."""
+    import websocket
+    out = []
+    for url in (DERIV_PUBLIC_WS, DERIV_LEGACY_WS.format(app_id=config.DERIV_APP_ID)):
+        t = time.time()
+        rec = {"endpoint": "new public API" if url == DERIV_PUBLIC_WS else "legacy API"}
+        try:
+            ws = websocket.create_connection(url, timeout=timeout)
+            try:
+                ws.send(json.dumps({**payload, "req_id": 7}))
+                msg = json.loads(ws.recv())
+            finally:
+                ws.close()
+            if "error" in msg:
+                rec["error"] = f"{msg['error'].get('code')}: {msg['error'].get('message')}"
+            else:
+                body = msg.get(msg.get("msg_type", ""), msg)
+                rec["keys"] = list(body)[:8] if isinstance(body, dict) else f"list of {len(body)}"
+                rec["sample"] = json.dumps(body)[:300]
+        except Exception as e:
+            rec["error"] = str(e)[:160]
+        rec["ms"] = round(1000 * (time.time() - t))
+        out.append(rec)
+    return out
+
+
+def binance_probe() -> list[dict]:
+    out = []
+    for host in ("https://data-api.binance.vision", "https://api.binance.com"):
+        try:
+            n = len(get_json(f"{host}/api/v3/klines", {"symbol": "BTCUSDT", "interval": "1m", "limit": 3}))
+            out.append({"host": host, "ok": True, "rows": n})
+        except Exception as e:
+            out.append({"host": host, "ok": False, "error": str(e)[:120]})
+    return out
+
+
 def deriv_candles(symbol: str, tf: str, count: int = 500, end: int | None = None) -> pd.DataFrame:
     msg = _deriv_request({
         "ticks_history": symbol, "style": "candles", "granularity": tf_seconds(tf),

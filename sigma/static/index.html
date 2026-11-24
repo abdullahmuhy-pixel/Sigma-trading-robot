@@ -571,7 +571,7 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
      hyperliquid:'Hyperliquid (crypto funding / open interest)',kraken:'Kraken Futures (crypto funding / open interest)',okx:'OKX (crypto long/short)'};
    const rows=Object.entries(r).filter(([k])=>k!=='checked_at').map(([k,v])=>({k,...v}));
    $('#s-src').innerHTML='<div class="scroll">'+table([['Source',x=>esc(names[x.k]||x.k)],['Status',x=>x.ok===true?'<span class="long">working</span>':x.ok===false?'<span class="short">not reachable</span>':'<span class="muted">not set up</span>'],
-     ['Time',x=>x.ms!=null?x.ms+' ms':''],['Details',x=>esc(x.error||x.note||(x.markets?x.markets+' markets':''))]],rows)+'</div><p class="muted">Sources that fail are skipped automatically; Sigma uses whatever works.</p>'}
+     ['Time',x=>x.ms!=null?x.ms+' ms':''],['Details',x=>`<div style="white-space:normal;min-width:220px;word-break:break-word">${esc(x.error||x.note||(x.markets?x.markets+' markets':''))}</div>`]],rows)+'</div><p class="muted">Sources that fail are skipped automatically; Sigma uses whatever works.</p>'}
  if(on==='cal'){const c=await api('/api/calendar');$('#s-cal').innerHTML='<div class="scroll">'+table([['Time (SAST)',r=>fmtT(r.time)],['Ccy',r=>esc(r.currency)],['Impact',r=>`<span class="${r.impact==='High'?'short':''}">${esc(r.impact)}</span>`],['Event',r=>esc(r.title)],['Forecast',r=>esc(r.forecast)],['Previous',r=>esc(r.previous)],['Actual',r=>esc(r.actual)]],c.filter(e=>e.time>Date.now()/1000-86400))+'</div>'}
 }catch(e){document.querySelector('.sub.on').innerHTML='<p class="short">'+esc(e.message)+'</p>'}}
 // ---------------- watchlist & session editors: change on screen instantly, save in the background
