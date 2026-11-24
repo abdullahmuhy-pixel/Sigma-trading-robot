@@ -8,3 +8,4 @@ anthropic>=0.40
 pytest>=8
 psycopg[binary]>=3.1
 pywebpush>=2.0
+reportlab>=4.0

@@ -87,6 +87,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 .wbar{display:flex;align-items:center;gap:8px;margin:4px 0;font:12.5px var(--mono)}
 .wbar .lbl{width:150px;color:var(--dim)}.wbar .track{flex:1;height:10px;background:var(--panel2);border-radius:5px;position:relative}
 .wbar .fill{position:absolute;top:0;height:10px;border-radius:5px}
+a.btn{display:inline-block;padding:8px 14px;border-radius:8px;background:var(--accent);color:#111;font-weight:600;text-decoration:none}
 .prog{height:12px;background:var(--panel2);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
 .prog i{display:block;height:100%;background:var(--up)}
 .logl{font:12px var(--mono);color:var(--dim);max-height:260px;overflow:auto;white-space:pre-wrap}
@@ -209,7 +210,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
     <div class="box"><h4>Your real-account goal</h4><div id="goal"></div></div>
     <h3>Open positions</h3><div class="scroll" id="openpos"></div>
     <h3>Pending orders</h3><div class="scroll" id="pendpos"></div>
-    <h3>Closed trades</h3><div class="scroll" id="closedpos"></div>
+    <div class="bar" style="border:0;padding:14px 0 4px"><h3 style="margin:0">Closed trades</h3><span class="spacer"></span>
+      <select id="rep_days"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="0">All trades</option></select>
+      <a id="rep_dl" class="btn" href="/api/report/trades.pdf?days=30" download>⬇ PDF report</a></div>
+    <p class="muted" style="margin:0 0 6px">The report has every closed trade with Sigma's analysis and lesson, plus where it wins and loses.
+      Send it to Claude now and then to tune the robot.</p>
+    <div class="scroll" id="closedpos"></div>
     <h3>Trades you asked Sigma to review</h3><div class="scroll" id="mine"></div>
   </div></section>
 
@@ -308,6 +314,10 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
   if(p==='paper'){loadPaper();loadCopy()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
+// ---------------- PDF report
+$('#rep_days').onchange=e=>{$('#rep_dl').href='/api/report/trades.pdf?days='+e.target.value};
+$('#rep_dl').onclick=()=>toast('Preparing the PDF…');
+
 // ---------------- copy trading
 let copyTimer=null;const CF=['#c_risk','#c_max','#c_dl','#c_ts','#c_td'];
 CF.forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.dirty='1';$('#c_save').textContent='Save settings •'}));

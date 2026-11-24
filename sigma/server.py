@@ -542,6 +542,17 @@ def bot_trades(limit: int = 100, account: str | None = None):
     return {"trades": rows, "stats": review.stats(acct), "learning": review.learning()}
 
 
+@app.get("/api/report/trades.pdf")
+def trades_report(days: int | None = None):
+    from fastapi.responses import Response
+    from . import report_pdf
+    pdf = report_pdf.build(days if days and days > 0 else None)
+    stamp = time.strftime("%Y-%m-%d")
+    name = f"sigma-paper-trades-{stamp}{'-' + str(days) + 'd' if days else ''}.pdf"
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @app.get("/api/copy")
 def copy_status():
     from . import copytrade
