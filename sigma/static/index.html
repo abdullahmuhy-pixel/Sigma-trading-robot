@@ -566,7 +566,7 @@ async function loadMarkets(){const on=document.querySelector('.tab.on').dataset.
    <h3>Worst setups</h3>${table([['Setup',r=>esc(r.setup)],['n',r=>r.n],['Win',r=>pct(r.win_rate)],['Exp R',r=>fx(r.expectancy,2)]],L.worst_setups)}`}
  if(on==='bt'){const p=await api('/api/backtest/progress');$('#btprog').innerHTML=Object.entries(p).map(([k,v])=>`<div class="kv" style="margin:6px 0">${esc(k)}: ${esc(v.status)} ${v.total?Math.round(100*v.done/v.total)+'%':''}</div>`).join('')}
  if(on==='src'){$('#s-src').innerHTML='<p class="muted">Checking every data source from the server… (10–20 s)</p>';
-   const r=await api('/api/sources');const names={deriv_prices:'Deriv prices',deriv_calendar:'Deriv economic calendar',deriv_trading_hours:'Deriv trading hours',
+   const r=await api('/api/sources');const names={deriv_prices:'Deriv prices',forexfactory_calendar:'Economic calendar (ForexFactory)',deriv_trading_hours:'Deriv trading hours',
      binance_spot:'Binance (crypto prices)',twelvedata:'Twelve Data',myfxbook:'Myfxbook crowd',ig_sentiment:'IG client sentiment',
      hyperliquid:'Hyperliquid (crypto funding / open interest)',kraken:'Kraken Futures (crypto funding / open interest)',okx:'OKX (crypto long/short)'};
    const rows=Object.entries(r).filter(([k])=>k!=='checked_at').map(([k,v])=>({k,...v}));

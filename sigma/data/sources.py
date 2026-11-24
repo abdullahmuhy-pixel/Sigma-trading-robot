@@ -17,19 +17,13 @@ def _try(fn):
 
 
 def check_all() -> dict:
-    from . import crypto_derivs, deriv_info, market, positioning
+    from . import crypto_derivs, deriv_info, market, news, positioning
     out = {
         "deriv_prices": _try(lambda: len(market.deriv_candles("R_75", "M1", 5))),
-        "deriv_calendar": _try(lambda: (deriv_info._fail_until.clear(), deriv_info.economic_calendar())[1]),
+        "forexfactory_calendar": _try(lambda: news.forexfactory_calendar()),
         "deriv_trading_hours": _try(lambda: deriv_info.trading_times()),
         "binance_spot": _try(lambda: len(market.binance_candles("BTCUSDT", "M1", 5))),
     }
-    if not out["deriv_calendar"]["ok"]:          # show exactly what Deriv answered
-        now = int(time.time())
-        probe = market.deriv_probe({"economic_calendar": 1, "start_date": now - 86400, "end_date": now + 7 * 86400})
-        out["deriv_calendar"]["error"] = " | ".join(
-            f"{p['endpoint']}: " + (p.get("error") or f"keys {p.get('keys')} {p.get('sample', '')[:140]}") for p in probe)
-        out["deriv_calendar"]["probe"] = probe
     if not out["binance_spot"]["ok"]:
         out["binance_spot"]["error"] = " | ".join(
             f"{p['host'].split('//')[1]}: " + ("ok" if p["ok"] else p["error"]) for p in market.binance_probe())

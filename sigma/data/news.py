@@ -110,10 +110,10 @@ def alphavantage_sentiment(tickers: str) -> list[dict]:
 
 
 def calendar() -> list[dict]:
-    """This week's economic events from Deriv's calendar and ForexFactory, merged without duplicates:
-    time (epoch), currency, impact, title, forecast, previous, actual, source."""
-    from .deriv_info import economic_calendar, merge_calendars
-    return merge_calendars(forexfactory_calendar(), economic_calendar())
+    """This week's economic events (ForexFactory): time (epoch), currency, impact, title, forecast,
+    previous, actual, source. Deriv's calendar was tried as a second source, but Deriv's current API
+    doesn't offer it and its old API refuses connections (checked 24 Nov 2026), so it isn't called."""
+    return forexfactory_calendar()
 
 
 def forexfactory_calendar() -> list[dict]:
