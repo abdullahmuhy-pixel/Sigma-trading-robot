@@ -159,10 +159,15 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
     except Exception as e:
         log.debug("live price unavailable: %s", e)
     closed = market_closed(res["bar_time"], tf)
+    hours = _hours(inst.name)
+    res["market_hours"] = hours
+    if hours.get("open") is False and not closed:
+        closed = 1
     if closed:
         res["market_closed"] = True
         res["is_signal"] = False
-        res["blocked_reason"] = f"market closed - last candle closed {closed / 3600:.1f} h ago"
+        res["blocked_reason"] = (f"market closed (Deriv trading hours){_opens(hours)}" if hours.get("open") is False
+                                 else f"market closed - last candle closed {closed / 3600:.1f} h ago")
         if source == "live":
             return res          # scheduled scans skip closed markets entirely
         open_trade = False      # chat analysis is still shown and journalled, never traded
@@ -172,6 +177,25 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
             from . import paper
             res["trade_id"] = paper.open_trade(res, source="live", entry_price=_live_entry(inst, res))
     return res
+
+
+def _hours(name: str) -> dict:
+    try:
+        from .data.deriv_info import market_hours
+        return market_hours(name)
+    except Exception as e:
+        log.debug("market hours: %s", e)
+        return {"open": None}
+
+
+def _opens(h: dict) -> str:
+    m = h.get("opens_in_min")
+    return f" - opens in {m / 60:.1f} h" if m else ""
+
+
+def is_closed_now(name: str) -> bool:
+    """True only when Deriv's official hours say the market is shut right now (unknown = not closed)."""
+    return _hours(name).get("open") is False
 
 
 def apply_live(res: dict, live: float | None) -> dict:

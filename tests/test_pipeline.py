@@ -33,6 +33,9 @@ def offline(monkeypatch):
     learning._model = None
     from sigma.symbols import tf_seconds
     monkeypatch.setattr(market, "candles", lambda s, tf, count=500: synth(tf_seconds(tf), count, seed=len(s)))
+    from sigma.data import deriv_info
+    monkeypatch.setattr(deriv_info, "trading_times", lambda day=None: {})     # hours unknown offline
+    monkeypatch.setattr(deriv_info, "economic_calendar", lambda *a, **k: [])
     monkeypatch.setattr(market, "last_price", lambda s: {"USDZAR": 18.0, "EURUSD": 1.1}.get(s) or
                         (_ for _ in ()).throw(market.DataError("x")))
     monkeypatch.setattr(news, "headlines", lambda *a, **k: [

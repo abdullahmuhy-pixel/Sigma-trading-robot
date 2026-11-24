@@ -24,6 +24,8 @@ def scan(tf: str, symbols: list[str] | None = None) -> list[dict]:
     for s in symbols or watchlist.get()["symbols"]:
         state["scanning"] = f"{s} {tf}"
         try:
+            if engine.is_closed_now(s):
+                continue                 # official hours say shut: no data calls wasted
             r = engine.analyze(s, tf, source="live")
             out.append(r)
             if r.get("is_signal"):

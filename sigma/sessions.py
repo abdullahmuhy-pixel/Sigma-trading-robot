@@ -108,6 +108,8 @@ def scan(session: str, now: float | None = None, analyze=None) -> dict:
     found, checked, errors = [], 0, []
     for sym in s["pairs"]:
         best = None
+        if engine.is_closed_now(sym):
+            continue
         for tf in SCAN_TIMEFRAMES:
             try:
                 r = analyze(sym, tf)

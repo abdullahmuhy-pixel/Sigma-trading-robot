@@ -107,6 +107,9 @@ TOOLS = [
     {"name": "economic_calendar", "description": "This week's economic events, optionally for some currencies.",
      "input_schema": {"type": "object", "properties": {"currencies": {"type": "array", "items": {"type": "string"}},
                                                        "impact": {"type": "string", "enum": ["High", "Medium", "Low", "any"]}}}},
+    {"name": "market_hours", "description": "Official Deriv trading hours for an instrument: open now or not, "
+     "minutes until it closes or opens, and any special events today (early closes, holidays).",
+     "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "get_price", "description": "Latest price of an instrument.",
      "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "performance", "description": "Paper-trading track record (signals only by default).",
@@ -288,6 +291,9 @@ def run_tool(name: str, args: dict) -> object:
         imp = args.get("impact", "any")
         return [{**e, "time": _local(e["time"])} for e in news.calendar()
                 if (not ccys or e["currency"] in ccys) and (imp in (None, "any") or e["impact"] == imp)][:60]
+    if name == "market_hours":
+        from .data.deriv_info import market_hours
+        return market_hours(args["symbol"])
     if name == "get_price":
         return {"symbol": args["symbol"], "price": market.last_price(args["symbol"]), "time": _local(time.time())}
     if name == "performance":

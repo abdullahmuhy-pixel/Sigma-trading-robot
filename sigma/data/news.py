@@ -110,7 +110,13 @@ def alphavantage_sentiment(tickers: str) -> list[dict]:
 
 
 def calendar() -> list[dict]:
-    """This week's economic events: time (epoch), currency, impact, title, forecast, previous, actual."""
+    """This week's economic events from Deriv's calendar and ForexFactory, merged without duplicates:
+    time (epoch), currency, impact, title, forecast, previous, actual, source."""
+    from .deriv_info import economic_calendar, merge_calendars
+    return merge_calendars(forexfactory_calendar(), economic_calendar())
+
+
+def forexfactory_calendar() -> list[dict]:
     def load():
         rows = get_json(config.CALENDAR_URL)
         out = []
@@ -121,7 +127,7 @@ def calendar() -> list[dict]:
                 continue
             out.append({"time": ts, "currency": r.get("country", "").upper(), "impact": r.get("impact", ""),
                         "title": r.get("title", ""), "forecast": r.get("forecast", ""),
-                        "previous": r.get("previous", ""), "actual": r.get("actual", "")})
+                        "previous": r.get("previous", ""), "actual": r.get("actual", ""), "source": "forexfactory"})
         return sorted(out, key=lambda e: e["time"])
 
     try:

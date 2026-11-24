@@ -58,6 +58,8 @@ GIVEBACK_FLOOR = 0.15       # ...and falls back to 15% of it is closed to protec
 SCALP_MAX_MIN_IN_PROFIT = 15
 SCALP_MAX_MIN = 30
 SHORT_MAX_HOURS = 6
+NO_ENTRY_BEFORE_CLOSE_MIN = 15   # no new trades this close to a market's close
+FLAT_BEFORE_CLOSE_MIN = 5        # close open positions before the market shuts (no weekend/holiday gaps)
 MANAGE_EVERY = 10
 ENTRY_EVERY = 60
 
@@ -238,6 +240,16 @@ def exit_reason(t: dict, p: float, now: float) -> str | None:
     return None
 
 
+def _closing_soon(sym: str, minutes: float) -> str | None:
+    try:
+        from ..data.deriv_info import market_hours
+        h = market_hours(sym)
+    except Exception:
+        return None
+    c = h.get("closes_in_min")
+    return f"market closes in {c:.0f} min" if c is not None and c <= minutes else None
+
+
 def manage(broker, s: dict, close_all_reason: str | None = None) -> float:
     """Checks every open position; returns total unrealized profit of those still open."""
     now = time.time()
@@ -255,7 +267,7 @@ def manage(broker, s: dict, close_all_reason: str | None = None) -> float:
         if p > (t.get("max_profit") or 0):
             db.update("bot_trades", t["id"], {"max_profit": round(p, 4)})
             t["max_profit"] = p
-        reason = close_all_reason or exit_reason(t, p, now)
+        reason = close_all_reason or exit_reason(t, p, now) or _closing_soon(t["symbol"], FLAT_BEFORE_CLOSE_MIN)
         if reason:
             try:
                 c = broker.close(t["broker_ref"], t)
@@ -326,7 +338,7 @@ def look_for_entries(broker, s: dict, equity: float, risk: dict) -> int:
     for sym in s["symbols"]:
         inst = resolve(sym)
         ev = sentiment.event_risk(inst)
-        if ev.get("blocked"):
+        if ev.get("blocked") or engine.is_closed_now(sym) or _closing_soon(sym, NO_ENTRY_BEFORE_CLOSE_MIN):
             continue
         for setup_fn in (_short_setup, _scalp_setup):
             try:
