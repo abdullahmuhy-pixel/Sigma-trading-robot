@@ -6,7 +6,9 @@ from __future__ import annotations
 from . import db
 from .symbols import TIMEFRAMES, resolve
 
-DEFAULT = {"symbols": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "USDZAR", "BTCUSD", "R_75", "BOOM1000"],
+FOCUS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY",
+         "EURGBP", "USDZAR", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"]      # forex, gold/silver, crypto
+DEFAULT = {"symbols": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD", "USDZAR", "BTCUSD", "ETHUSD"],
            "timeframes": ["M15", "H1"], "enabled": True}
 MAX_SYMBOLS = 30
 SCANS_PER_DAY = {"M1": 1440, "M5": 288, "M15": 96, "M30": 48, "H1": 24, "H4": 6, "D1": 1}
@@ -16,6 +18,13 @@ def get() -> dict:
     w = db.kv_get("watchlist") or {}
     out = {**DEFAULT, **w}
     out["scans_per_day"] = len(out["symbols"]) * sum(SCANS_PER_DAY[t] for t in out["timeframes"])
+    out["classes"] = {}
+    for s in out["symbols"]:
+        try:
+            out["classes"][s] = resolve(s).asset_class
+        except Exception:
+            out["classes"][s] = "?"
+    out["focus"] = FOCUS
     return out
 
 

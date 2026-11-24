@@ -315,6 +315,7 @@ class AccountIn(BaseModel):
     currency: str | None = None
     risk_pct: float | None = None
     reset: bool = False
+    markets: list[str] | None = None
 
 
 @app.post("/api/account")

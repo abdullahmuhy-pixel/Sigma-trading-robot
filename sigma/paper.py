@@ -40,8 +40,10 @@ def open_trade(res: dict, source: str = "live", entry_price: float | None = None
     tp = entry + d * config.REWARD_R * risk
     demo = {}
     if source == "live" and (res.get("is_signal") or res.get("source") == "chat"):
-        from . import account   # robot signals + everything you ask it to analyse go on the demo account
-        demo = {"demo": 1, **account.size_trade(resolve(res["symbol"]).quote, risk)}
+        from . import account   # robot signals on your chosen kinds of market + everything you ask it to analyse
+        inst = resolve(res["symbol"])
+        if res.get("source") == "chat" or account.trades_class(inst.asset_class):
+            demo = {"demo": 1, **account.size_trade(inst.quote, risk)}
     return db.insert("trades", {**demo,
         "analysis_id": res["analysis_id"], "symbol": res["symbol"], "timeframe": res["timeframe"],
         "source": source, "direction": d, "entry": entry, "sl": sl, "tp": tp,

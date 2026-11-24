@@ -60,3 +60,35 @@ def test_momentum_against_the_trade_blocks_that_side(monkeypatch):
         assert not sides["buy"]["qualifies"]
     else:
         assert "momentum" not in (sides["buy"]["blocked"] or "") + (sides["sell"]["blocked"] or "")
+
+
+def test_demo_account_skips_synthetic_signals_but_keeps_chat(monkeypatch):
+    import os, tempfile, time
+    from sigma import account, db
+    db.connect(os.path.join(tempfile.mkdtemp(), "mk.db"))
+    assert account.settings()["markets"] == ["forex", "metal", "crypto"]
+
+    def trade(sym, source="live"):
+        aid = db.insert("analyses", {"created_at": time.time(), "bar_time": time.time() + hash(sym + source) % 1000,
+                                     "symbol": sym, "timeframe": "H1", "source": source, "direction": 1})
+        res = {"analysis_id": aid, "symbol": sym, "timeframe": "H1", "bar_time": time.time() + hash(sym + source) % 1000,
+               "direction": 1, "entry": 100.0, "sl": 99.0, "setup_key": "k", "is_signal": True, "source": source,
+               "plan": {"kind": "MARKET", "order_type": "BUY", "pending_bars": 0}}
+        return db.q1("SELECT demo FROM trades WHERE id=?", (paper.open_trade(res),))["demo"]
+    assert trade("EURUSD") == 1 and trade("XAUUSD") == 1 and trade("BTCUSD") == 1
+    assert not trade("R_75")                         # synthetic robot signal: learned from, not on the demo account
+    assert trade("BOOM1000", source="chat") == 1     # you asked for it in the chat: always on the demo account
+    account.update_settings(markets=["forex", "metal", "crypto", "synthetic"])
+    assert trade("R_100") == 1
+    with pytest.raises(ValueError):
+        account.update_settings(markets=[])
+
+
+def test_watchlist_reports_market_types():
+    import os, tempfile
+    from sigma import db, watchlist
+    db.connect(os.path.join(tempfile.mkdtemp(), "w.db"))
+    watchlist.set_symbols(["EURUSD", "R_75", "XAUUSD"])
+    w = watchlist.get()
+    assert w["classes"] == {"EURUSD": "forex", "R_75": "synthetic", "XAUUSD": "metal"}
+    assert all(watchlist.resolve(s).asset_class in ("forex", "metal", "crypto") for s in w["focus"])

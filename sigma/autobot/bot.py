@@ -37,7 +37,7 @@ log = logging.getLogger("sigma.bot")
 
 DEFAULTS = {
     "running": False, "account": "paper",               # paper | deriv
-    "symbols": ["R_75", "R_100", "1HZ100V", "XAUUSD", "EURUSD", "BTCUSD"],
+    "symbols": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "ETHUSD"],
     "daily_target": 2.0,            # account currency
     "daily_loss_pct": 3.0,          # stop for the day after losing this % of the day's starting equity
     "max_drawdown_pct": 8.0,        # stop completely (until you reset) at this drop from the peak

@@ -17,7 +17,15 @@ from zoneinfo import ZoneInfo
 
 from . import config, db, learning
 
-DEFAULTS = {"start_balance": 10_000.0, "currency": "USD", "risk_pct": 1.0}
+DEFAULTS = {"start_balance": 10_000.0, "currency": "USD", "risk_pct": 1.0,
+            # which kinds of market the robot's own signals may trade on the demo account
+            # (your chat analyses always go on it). Synthetic indices are off by default.
+            "markets": ["forex", "metal", "crypto"]}
+ASSET_CLASSES = ["forex", "metal", "crypto", "index", "commodity", "stock", "synthetic", "basket"]
+
+
+def trades_class(asset_class: str) -> bool:
+    return asset_class in settings()["markets"]
 
 
 def settings() -> dict:
@@ -30,8 +38,15 @@ def settings() -> dict:
 
 
 def update_settings(start_balance: float | None = None, currency: str | None = None,
-                    risk_pct: float | None = None, reset: bool = False) -> dict:
+                    risk_pct: float | None = None, reset: bool = False, markets: list[str] | None = None) -> dict:
     s = settings()
+    if markets is not None:
+        bad = [m for m in markets if m not in ASSET_CLASSES]
+        if bad:
+            raise ValueError(f"unknown market type: {', '.join(bad)}")
+        if not markets:
+            raise ValueError("choose at least one kind of market for the demo account")
+        s["markets"] = [m for m in ASSET_CLASSES if m in markets]
     if start_balance is not None:
         if start_balance <= 0:
             raise ValueError("starting balance must be positive")

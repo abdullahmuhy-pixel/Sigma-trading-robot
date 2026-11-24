@@ -184,6 +184,10 @@ a.btn{display:inline-block;padding:8px 14px;border-radius:8px;background:var(--a
         <label>Risk per trade %<input id="a_risk" type="number" min="0.05" max="5" step="0.05" style="width:90px"></label>
         <button id="a_save">Save</button><button id="a_reset" class="danger">Reset account</button>
       </div>
+      <h4 style="margin-top:12px">Markets the demo account trades</h4>
+      <div class="chips" id="a_mk"></div>
+      <p class="muted" style="margin-top:4px">Robot signals on unticked kinds of market are still analysed and learned from, but
+        don't go on the demo account. Anything you ask Sigma to analyse in the chat always does.</p>
       <p class="muted">The demo account trades every robot signal and every instrument you analyse. Each trade risks the set % of the current balance.</p>
     </div>
     <div class="box" id="copybox"><h4>Copy these trades to a real account <span id="cstate" class="state stop">off</span></h4>
@@ -314,6 +318,14 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
   if(p==='paper'){loadPaper();loadCopy()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
+// ---------------- demo account markets
+const MK=[['forex','Forex'],['metal','Gold & metals'],['crypto','Crypto'],['index','Stock indices'],['commodity','Oil & commodities'],['synthetic','Synthetic indices']];
+let mkNow=null;
+function drawMk(on){mkNow=on;$('#a_mk').innerHTML=MK.map(([k,l])=>`<button class="tfb ${on.includes(k)?'on':''}" data-mk="${k}">${l}</button>`).join('')}
+$('#a_mk').onclick=async e=>{const k=e.target.dataset?.mk;if(!k||!mkNow)return;const before=mkNow;
+  const nxt=mkNow.includes(k)?mkNow.filter(x=>x!==k):[...mkNow,k];if(!nxt.length){toast('Keep at least one');return}
+  drawMk(nxt);try{await post('/api/account',{markets:nxt});toast('Saved')}catch(err){drawMk(before);toast(esc(err.message))}};
+
 // ---------------- PDF report
 $('#rep_days').onchange=e=>{$('#rep_dl').href='/api/report/trades.pdf?days='+e.target.value};
 $('#rep_dl').onclick=()=>toast('Preparing the PDF…');
@@ -581,6 +593,7 @@ async function loadPaper(){try{const a=await api('/api/account'),c=a.currency;
   $('#acctkpi').innerHTML=kv('Balance',money(a.balance,c))+kv('Equity (incl. open)',money(a.equity,c))+kv('Profit today',money(a.pnl.today,c),cls(a.pnl.today))
    +kv('This week',money(a.pnl.this_week,c),cls(a.pnl.this_week))+kv('This month',money(a.pnl.this_month,c),cls(a.pnl.this_month))
    +kv('Total',money(a.total_pnl,c)+` (${a.return_pct>0?'+':''}${a.return_pct}%)`,cls(a.total_pnl))+kv('Win rate',pct(a.stats.win_rate))+kv('Closed trades',a.stats.trades);
+  drawMk(a.settings.markets||[]);
   if(document.activeElement.tagName!=='INPUT'){$('#a_bal').value=a.start_balance;$('#a_ccy').value=c;$('#a_risk').value=a.settings.risk_pct}
   drawLine($('#eq'),a.equity_curve.map(e=>e.balance),'Balance curve appears after the first closed trade');
   const base=[['Opened',r=>fmtT(r.opened_at)],['Market',r=>esc(r.symbol)+' '+r.timeframe],['Order',r=>dirTxt(r.direction,r.order_type)],['Entry',r=>fx(r.entry)],['SL',r=>fx(r.sl)],['TP',r=>fx(r.tp)],['Risk',r=>money(r.risk_amount,c)]];
@@ -667,6 +680,8 @@ function renderWatch(){const w=WL;if(!w)return;const spd=w.symbols.length*w.time
    <h4 style="margin-top:14px">Markets (${w.symbols.length})</h4>
    <div class="chips">${w.symbols.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-wrm="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No markets: nothing will be scanned.</span>'}</div>
    <button id="w_add">+ Add market</button>
+   <button class="ghost" id="w_focus" title="Replace the list with forex, gold, silver and crypto">Forex, gold &amp; crypto only</button>
+   <button class="ghost" id="w_nosyn">Remove synthetics</button>
    <h4 style="margin-top:16px">Timeframes <span class="muted" style="text-transform:none;letter-spacing:0">(tick as many as you like)</span></h4>
    <div class="chips">${['M5','M15','M30','H1','H4','D1'].map(t=>`<button class="tfb ${w.timeframes.includes(t)?'on':''}" data-wtf="${t}">${t}</button>`).join('')}
      <button class="ghost tfb" id="w_all">All</button></div>
@@ -679,8 +694,13 @@ function renderWatch(){const w=WL;if(!w)return;const spd=w.symbols.length*w.time
   document.querySelectorAll('[data-wtf]').forEach(b=>b.onclick=()=>{const t=b.dataset.wtf,cur=WL.timeframes;
     const nxt=cur.includes(t)?cur.filter(x=>x!==t):[...cur,t];if(!nxt.length){toast('Keep at least one timeframe');return}
     const ordered=['M5','M15','M30','H1','H4','D1'].filter(x=>nxt.includes(x));saveWatch(w=>({...w,timeframes:ordered}),{timeframes:ordered})});
+  $('#w_focus').onclick=()=>{if(!confirm('Replace the watchlist with 11 forex pairs, gold, silver, Bitcoin and Ethereum?'))return;
+    const F=WL.focus||[];saveWatch(w=>({...w,symbols:F}),{symbols:F});toast('Watchlist: forex, gold & crypto')};
+  $('#w_nosyn').onclick=()=>{const keep=WL.symbols.filter(c=>!isSynthetic(c));if(keep.length===WL.symbols.length){toast('No synthetic indices on the list');return}
+    saveWatch(w=>({...w,symbols:keep}),{symbols:keep});toast(`Removed ${WL.symbols.length-keep.length} synthetic indices`)};
   $('#w_all').onclick=()=>{const all=['M5','M15','M30','H1','H4','D1'];saveWatch(w=>({...w,timeframes:all}),{timeframes:all})}}
 let wSeq=0;
+function isSynthetic(c){return ((WL&&WL.classes)||{})[c]==='synthetic'}
 async function saveWatch(change,body){const before=WL,my=++wSeq;WL=change(WL);renderWatch();const st=$('#w_state');if(st)st.textContent='saving…';
   try{const r=await post('/api/watchlist',body);if(my===wSeq){WL=r;renderWatch();const s2=$('#w_state');if(s2){s2.textContent='saved ✓';setTimeout(()=>{if(s2.textContent==='saved ✓')s2.textContent=''},1500)}}}
   catch(e){if(my===wSeq){WL=before;renderWatch()}toast('Not saved: '+esc(e.message))}}
