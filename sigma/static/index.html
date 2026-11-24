@@ -288,7 +288,11 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   if(p==='paper')loadPaper();if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
 // ---------------- auto bot
-let botTimer=null,botSyms=[];
+let botTimer=null,botSyms=[],botSymsPending=0;
+function drawBotSyms(){$('#bsyms').innerHTML=botSyms.map(x=>`<span class="chip">${esc(x)}<b data-x="${esc(x)}">×</b></span>`).join('')||'<span class="muted">No markets - add one.</span>'}
+async function saveBotSyms(list){const before=botSyms;botSyms=list;drawBotSyms();botSymsPending++;
+  try{const r=await post('/api/bot',{symbols:list});botSyms=r.settings.symbols;drawBotSyms()}
+  catch(e){botSyms=before;drawBotSyms();toast(esc(e.message))}finally{botSymsPending--}}
 async function loadBot(){clearInterval(botTimer);await renderBot();await renderBotTrades();
   botTimer=setInterval(()=>{if(location.hash==='#bot')renderBot();else clearInterval(botTimer)},5000)}
 async function renderBot(){let b;try{b=await api('/api/bot')}catch(e){$('#bwarn').innerHTML=`<p class="warn">${esc(e.message)}</p>`;return}
@@ -307,10 +311,11 @@ async function renderBot(){let b;try{b=await api('/api/bot')}catch(e){$('#bwarn'
   $('#bpos').innerHTML=table([['Mode',t=>t.mode],['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],['Entry',t=>fx(t.entry)],['Now',t=>fx(t.price_now)],
     ['Stake',t=>money(t.stake)],['×',t=>t.multiplier],['Target',t=>money(t.tp_usd)],['Max loss',t=>money(t.sl_usd)],['P/L',t=>`<span class="${cls(t.pnl_now)}">${money(t.pnl_now)}</span>`],
     ['Best',t=>money(t.max_profit)],['Opened',t=>fmtT(t.opened_at)]],b.positions,'No open positions.');
-  if(document.activeElement?.closest?.('#page-bot .form')==null){
-    $('#b_tgt').value=s.daily_target;$('#b_dl').value=s.daily_loss_pct;$('#b_dd').value=s.max_drawdown_pct;$('#b_rs').value=s.risk_scalp_pct;
-    $('#b_rt').value=s.risk_short_pct;$('#b_tp').value=s.scalp_tp??'';$('#b_acct').value=s.account;$('#b_pbal').value=s.paper_start_balance}
-  botSyms=s.symbols;$('#bsyms').innerHTML=botSyms.map(x=>`<span class="chip">${esc(x)}<b data-x="${esc(x)}">×</b></span>`).join('');
+  // fill the form, but never over a field you have changed and not saved yet
+  const fill=(id,v)=>{const el=$(id);if(!el.dataset.dirty&&document.activeElement!==el)el.value=v};
+  fill('#b_tgt',s.daily_target);fill('#b_dl',s.daily_loss_pct);fill('#b_dd',s.max_drawdown_pct);fill('#b_rs',s.risk_scalp_pct);
+  fill('#b_rt',s.risk_short_pct);fill('#b_tp',s.scalp_tp??'');fill('#b_acct',s.account);fill('#b_pbal',s.paper_start_balance);
+  if(!botSymsPending){botSyms=s.symbols;drawBotSyms()}
   $('#blog').innerHTML=b.log.slice().reverse().map(l=>`<div class="${l.level==='warn'?'warn':''}">${fmtT(l.t)}  ${esc(l.msg)}</div>`).join('')||'Nothing yet.'}
 async function renderBotTrades(){let r;try{r=await api('/api/bot/trades')}catch(e){return}
   const o=r.stats.overall||{};const sc=r.stats.scalp||{},sh=r.stats.short||{};
@@ -336,16 +341,25 @@ async function botDo(body,btn){
 $('#bstart').onclick=e=>botDo({action:'start'},e.target);
 $('#bstop').onclick=e=>botDo({action:'stop'},e.target);
 $('#bstopc').onclick=e=>{if(confirm('Stop the bot and close every open position now?'))botDo({action:'stop_close'},e.target)};
-$('#b_save').onclick=e=>{const n=id=>$(id).value===''?null:+$(id).value;const tp=n('#b_tp');
-  botDo({daily_target:n('#b_tgt'),daily_loss_pct:n('#b_dl'),max_drawdown_pct:n('#b_dd'),risk_scalp_pct:n('#b_rs'),risk_short_pct:n('#b_rt'),
-    scalp_tp:tp,scalp_tp_auto:tp==null},e.target)};
+const RULES=['#b_tgt','#b_dl','#b_dd','#b_rs','#b_rt','#b_tp'];
+RULES.forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.dirty='1';$('#b_save').textContent='Save rules •'}));
+$('#b_save').onclick=async e=>{const n=id=>$(id).value===''?null:+String($(id).value).replace(',','.');const tp=n('#b_tp');
+  const btn=e.target;btn.disabled=true;btn.textContent='Saving…';
+  try{await post('/api/bot',{daily_target:n('#b_tgt'),daily_loss_pct:n('#b_dl'),max_drawdown_pct:n('#b_dd'),risk_scalp_pct:n('#b_rs'),
+      risk_short_pct:n('#b_rt'),scalp_tp:tp,scalp_tp_auto:tp==null});
+    RULES.forEach(id=>delete $(id).dataset.dirty);btn.textContent='Saved ✓';toast('Rules saved');renderBot();
+    setTimeout(()=>{if(btn.textContent==='Saved ✓')btn.textContent='Save rules'},2000)}
+  catch(err){btn.textContent='Save rules •';toast(esc(err.message))}finally{btn.disabled=false}};
 $('#b_acsave').onclick=e=>{const a=$('#b_acct').value;const body={account:a};
   if(a!=='paper'){const t=prompt('LIVE trading uses real money and can lose it. The bot follows strict limits but no bot can guarantee profit.\n\nType  I UNDERSTAND THE RISK  to continue:');
     if(!t)return;body.confirm_live=t}botDo(body,e.target)};
 $('#b_reset').onclick=e=>{if(confirm('Reset the bot paper account to the starting balance? Its open paper positions are cleared.'))
   botDo({action:'reset',paper_start_balance:+$('#b_pbal').value||null},e.target)};
-$('#bsyms').onclick=e=>{const x=e.target.dataset?.x;if(!x)return;botDo({symbols:botSyms.filter(s=>s!==x)})};
-$('#baddsym').onclick=()=>{const v=prompt('Market to add (e.g. V75, Boom 1000, XAUUSD, EURUSD, BTCUSD):');if(v)botDo({symbols:[...botSyms,v]})};
+$('#bsyms').onclick=e=>{const x=e.target.dataset?.x;if(!x)return;saveBotSyms(botSyms.filter(s=>s!==x))};
+$('#baddsym').onclick=()=>openPicker((code,name)=>{const c=canon(code);
+  if(botSyms.includes(c)){toast(esc(name)+' is already on the list');return}
+  if(botSyms.length>=12){toast('The bot trades at most 12 markets');return}
+  saveBotSyms([...botSyms,c]);toast(esc(name)+' added')});
 
 
 // ---------------- chat (shared by every device)

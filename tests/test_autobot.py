@@ -169,3 +169,18 @@ def test_relearn_pauses_losers_and_shrinks_targets(fresh):
     assert L["scalp_tp_factor"] == pytest.approx(0.9)            # many trades reversed after 60% of target
     st = review.stats()
     assert st["scalp"]["trades"] == 25 and st["scalp"]["gave_back_after_profit"] > 0
+
+
+def test_raising_daily_limit_lifts_todays_halt(fresh):
+    s = bot.update_settings(daily_loss_pct=3.0, daily_target=15)
+    bot.risk_check(s, None, 100.0, 0.0)
+    r = bot.risk_check(s, None, 95.63, 0.0)                       # -4.37 on the day: halted at 3%
+    assert not r["can_open"] and "daily loss" in r["reason"]
+    st = bot.state()
+    st["halted"].pop("limit_pct")                                  # a halt saved by the older version
+    bot.save_state(st)
+    s = bot.update_settings(daily_loss_pct=10.0)
+    r = bot.risk_check(s, None, 95.63, 0.0)
+    assert r["can_open"] and bot.state()["halted"] is None
+    s = bot.update_settings(daily_loss_pct=4.0)                    # lowering it below today's loss halts again
+    assert not bot.risk_check(s, None, 95.63, 0.0)["can_open"]

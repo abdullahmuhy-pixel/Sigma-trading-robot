@@ -515,6 +515,8 @@ def bot_control(body: BotIn):
             raise ValueError("Stop the bot before switching accounts.")
         if f:
             bot.update_settings(**f)
+            if "daily_loss_pct" in f or "max_drawdown_pct" in f:
+                bot.refresh_risk_soon()
         if body.action == "start":
             bot.start()
         elif body.action in ("stop", "stop_close"):
@@ -523,8 +525,7 @@ def bot_control(body: BotIn):
             bot.reset(body.paper_start_balance)
         elif body.action == "relearn":
             review.relearn()
-        if body.action in ("start", "stop"):
-            return bot.status(light=True)       # instant answer; the page refreshes the numbers itself
+        return bot.status(light=True)           # instant answer; the page refreshes the numbers itself
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

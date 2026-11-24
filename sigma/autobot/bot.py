@@ -159,9 +159,14 @@ def risk_check(s: dict, broker, equity: float, unrealized: float) -> dict:
            "day_pnl": day_pnl, "realized_today": realized, "day_start_equity": start,
            "peak_equity": st["peak_equity"]}
     halted = st.get("halted")
+    if (halted and halted.get("kind") == "daily" and s["daily_loss_pct"] > _halt_limit(halted)
+            and day_pnl > -start * s["daily_loss_pct"] / 100):
+        halted = st["halted"] = None
+        say(f"Daily loss limit raised to {s['daily_loss_pct']}%: today's loss ({day_pnl:+.2f}) is within it, "
+            "so trading may resume.", "warn")
     if not halted and day_pnl <= -start * s["daily_loss_pct"] / 100:
         halted = st["halted"] = {"kind": "daily", "reason": f"daily loss limit ({s['daily_loss_pct']}%) reached",
-                                 "at": time.time()}
+                                 "at": time.time(), "limit_pct": s["daily_loss_pct"]}
         out["close_all"] = True
         say(f"Daily loss limit reached ({day_pnl:+.2f}). Closing everything and stopping until tomorrow.", "warn")
     if not halted and equity <= st["peak_equity"] * (1 - s["max_drawdown_pct"] / 100):
@@ -199,6 +204,24 @@ def _daily_review(s: dict, st: dict, equity: float) -> None:
         push.notify("Sigma bot: daily review", msg, url="/#bot", tag="sigma-bot-daily")
     except Exception as e:
         log.debug("daily review: %s", e)
+
+
+def _halt_limit(h: dict) -> float:
+    if h.get("limit_pct") is not None:
+        return float(h["limit_pct"])
+    import re
+    m = re.search(r"\(([\d.]+)%\)", h.get("reason", ""))      # halts saved before limit_pct existed
+    return float(m.group(1)) if m else 1e9
+
+
+def refresh_risk_soon() -> None:
+    """Re-check the risk rules in the background (e.g. after the limits change), without trading."""
+    def run():
+        try:
+            step(entries=False)
+        except Exception as e:
+            say(f"risk re-check failed: {e}", "warn")
+    threading.Thread(target=run, daemon=True).start()
 
 
 def record_close(trade: dict, pnl_value: float, exit_price: float, reason: str) -> None:

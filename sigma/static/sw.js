@@ -1,6 +1,6 @@
 // Sigma service worker: lets the app install on phones/desktops and open instantly.
 // Live data (/api) always comes from the server so every device sees the same state.
-const CACHE = 'sigma-shell-v5';
+const CACHE = 'sigma-shell-v6';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
