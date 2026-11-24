@@ -83,6 +83,9 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
         exp_d = m.expectancy(p_d) - cost_d
         key_d = f"{inst.name}|{tf}|{regime}|{'L' if d > 0 else 'S'}"
         block_d = event_block
+        mom = float(comps.get("momentum", 0.0)) * d
+        if not block_d and config.MOMENTUM_VETO and mom <= -config.MOMENTUM_VETO:
+            block_d = f"momentum is against the {'buy' if d > 0 else 'sell'} ({mom:+.2f})"
         g = learning.gated(key_d, stats)
         if g:
             block_d = f"setup switched off by learning ({g['n']} signals, {g['shrunk_expectancy']:+.2f}R)"

@@ -82,8 +82,11 @@ class Model:
         """Platt scaling learned from the model's own out-of-sample record:
         if past 70% calls only won 50% of the time, today's 70% becomes ~50%."""
         a, c = self.meta.get("calib") or calib_prior()
+        c = min(c, CALIB_SLOPE_MAX)
         p = min(max(p, 1e-6), 1 - 1e-6)
-        return float(sigmoid(a + c * math.log(p / (1 - p))))
+        q = float(sigmoid(a + c * math.log(p / (1 - p))))
+        # no single trade setup is anywhere near certain: keep estimates inside a believable range
+        return min(max(q, P_FLOOR), P_CEIL)
 
     def expectancy(self, p: float) -> float:
         return p * self.meta["avg_win_r"] + (1 - p) * self.meta["avg_loss_r"]
@@ -181,6 +184,8 @@ def refit(before: float | None = None, source_filter: str | None = None,
 
 CALIB_PRIOR = 30.0   # calibration needs evidence to move away from its prior
 CALIB_SLOPE0 = 0.6   # start sceptical: assume only 60% of the model's claimed edge is real
+CALIB_SLOPE_MAX = 1.5  # a refit on a small or lopsided sample must not stretch odds to 0% / 100%
+P_FLOOR, P_CEIL = 0.05, 0.85
 
 
 def calib_prior() -> list[float]:
@@ -206,7 +211,7 @@ def fit_calibration(raw_probs, y, w, iters: int = 500, lr: float = 0.5) -> list[
         gc = (g * z).sum() / W + 2 * lam * (c - c0)
         a -= lr * ga
         c -= lr * gc
-    c = max(c, 0.0)  # never invert the model's ranking
+    c = min(max(c, 0.0), CALIB_SLOPE_MAX)  # never invert the model's ranking, never stretch it wildly
     return [float(a), float(c)]
 
 

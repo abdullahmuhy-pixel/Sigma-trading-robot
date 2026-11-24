@@ -65,9 +65,14 @@ def fill_index(direction: int, kind: str, entry: float, bars: pd.DataFrame) -> t
 
 
 def simulate(direction: int, entry: float, sl: float, tp: float, bars: pd.DataFrame,
-             expires_at: float | None = None, cost_r: float = 0.0) -> dict | None:
+             expires_at: float | None = None, cost_r: float = 0.0, breakeven_r: float | None = None) -> dict | None:
     """Walk bars in order. If SL and TP are both inside one bar we assume the
-    stop was hit first (conservative). Returns None while still open."""
+    stop was hit first (conservative). Returns None while still open.
+    Breakeven: once a bar closes the trade's best move at +breakeven_r (default config.BREAKEVEN_R),
+    the stop moves to the entry from the NEXT bar on (never inside the same bar - conservative).
+    A trade stopped there ends as 'breakeven' (0R minus costs)."""
+    be_at = config.BREAKEVEN_R if breakeven_r is None else breakeven_r
+    be_on = False
     risk = abs(entry - sl)
     if risk <= 0:
         return {"status": "lost", "exit_price": entry, "r_multiple": -1.0, "closed_at": time.time(),
@@ -81,15 +86,21 @@ def simulate(direction: int, entry: float, sl: float, tp: float, bars: pd.DataFr
         fav = (hi - entry) if direction > 0 else (entry - lo)
         adv = (entry - lo) if direction > 0 else (hi - entry)
         mfe, mae = max(mfe, fav / risk), max(mae, adv / risk)
-        hit_sl = lo <= sl if direction > 0 else hi >= sl
+        stop = entry if be_on else sl
+        hit_sl = lo <= stop if direction > 0 else hi >= stop
         hit_tp = hi >= tp if direction > 0 else lo <= tp
         if hit_sl:
+            if be_on:
+                return {"status": "breakeven", "exit_price": entry, "r_multiple": -cost_r, "closed_at": t,
+                        "mfe_r": mfe, "mae_r": mae}
             return {"status": "lost", "exit_price": sl, "r_multiple": -1.0 - cost_r, "closed_at": t,
                     "mfe_r": mfe, "mae_r": mae}
         if hit_tp:
             r = abs(tp - entry) / risk
             return {"status": "won", "exit_price": tp, "r_multiple": r - cost_r, "closed_at": t,
                     "mfe_r": mfe, "mae_r": mae}
+        if be_at and not be_on and mfe >= be_at:
+            be_on = True
     if expires_at is not None and len(bars) and bars.index[-1].timestamp() >= expires_at - 1:
         done = bars[bars.index.map(lambda x: x.timestamp()) < expires_at]
         px = float(done["close"].iloc[-1]) if len(done) else entry

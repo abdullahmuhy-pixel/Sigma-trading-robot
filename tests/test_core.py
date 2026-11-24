@@ -323,10 +323,11 @@ def test_goal_plan_numbers_and_warnings():
     assert pl["progress_this_period"] == 120 and pl["remaining"] == 380 and pl["goal"]["balance"] == 1_120
 
 
-def test_open_minded_takes_the_other_side_when_one_is_blocked():
+def test_open_minded_takes_the_other_side_when_one_is_blocked(monkeypatch):
     """The robot must not fixate on one direction: if the stronger-looking side fails a check,
     the other side is judged on its own merits instead of answering 'no trade'."""
-    from sigma import engine
+    from sigma import config, engine
+    monkeypatch.setattr(config, "MOMENTUM_VETO", 0.0)   # this test is about the learning gate only
     m = learning.Model()
     m.bias = 2.0                      # make both sides attractive so only the filter decides
     m.meta["calib"] = [0.0, 1.0]

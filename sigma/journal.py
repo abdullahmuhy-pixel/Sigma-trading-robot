@@ -117,7 +117,7 @@ def order_stats(cache_seconds: float = 60) -> dict:
         rs = [r for r in rows if (r["order_type"] or "MARKET").split()[-1] in (kind,) or
               (kind == "MARKET" and (r["order_type"] or "MARKET") in ("BUY", "SELL", "MARKET"))]
         done = [r for r in rs if r["status"] not in ("open", "pending")]
-        filled = [r for r in done if r["status"] in ("won", "lost", "expired")]
+        filled = [r for r in done if r["status"] in ("won", "lost", "expired", "breakeven")]
         missed = sum(1 for r in done if r["status"] == "missed")
         cancelled = sum(1 for r in done if r["status"] == "cancelled")
         out[kind] = {"placed": len(done), "filled": len(filled), "missed": missed, "cancelled": cancelled,

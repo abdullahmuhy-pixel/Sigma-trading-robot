@@ -134,9 +134,9 @@ def build(days: int | None = None) -> bytes:
         results[r["status"]] += 1
     exp = a["avg_r"]
     out.append(Paragraph("1. Summary", H2))
-    out.append(Table([["Trades", "Won / lost / expired", "Win rate", "Average R", "Profit factor", "Net P&L",
+    out.append(Table([["Trades", "Won / lost / breakeven / expired", "Win rate", "Average R", "Profit factor", "Net P&L",
                        "Avg winner (R)", "Avg loser (R)"],
-                      [a["n"], f"{results['won']} / {results['lost']} / {results['expired']}", pct(a["win"]),
+                      [a["n"], f"{results['won']} / {results['lost']} / {results['breakeven']} / {results['expired']}", pct(a["win"]),
                        r2(exp), "-" if a["pf"] is None else f"{a['pf']:.2f}", money(a["net"]),
                        r2(_avg([r["r_multiple"] for r in closed if r["r_multiple"] > 0])),
                        r2(_avg([r["r_multiple"] for r in closed if r["r_multiple"] <= 0]))]], style=grid))

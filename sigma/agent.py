@@ -556,11 +556,17 @@ def chat(message: str, session: str = "default", max_turns: int = 12, images: li
 
 
 def post_mortem(analysis: dict, trade: dict) -> str:
-    prompt = (f"A paper trade closed. Write ONE or TWO sentences: the most likely reason it "
-              f"{'worked' if trade['r_multiple'] > 0 else 'failed'} and a concrete rule to apply next time. "
-              f"No preamble.\nSetup: {analysis['setup_key']}\nComponents: {json.dumps(analysis['components'])}\n"
+    outcome = ("ended at breakeven after being in profit" if trade["status"] == "breakeven"
+               else "worked" if trade["r_multiple"] > 0 else "failed")
+    prompt = (f"A paper trade closed. Write TWO or THREE complete sentences: the most likely reason it "
+              f"{outcome} and a concrete rule to apply next time. No preamble.\n"
+              "Facts to respect: component scores are + for buy and - for sell; Boom indices drift down and "
+              "SPIKE UP; Crash indices drift up and SPIKE DOWN; other Deriv synthetics (Volatility, Jump, "
+              "Step) are random-number driven with no news or fundamentals. Paper trades move the stop to "
+              "the entry once they are +1R in profit.\n"
+              f"Setup: {analysis['setup_key']}\nComponents: {json.dumps(analysis['components'])}\n"
               f"Notes: {analysis.get('notes')}\nResult: {trade['status']} {trade['r_multiple']:+.2f}R, "
               f"max favourable {trade.get('mfe_r', 0):.2f}R, max adverse {trade.get('mae_r', 0):.2f}R")
-    resp = _client().messages.create(model=config.CLAUDE_MODEL, max_tokens=200,
+    resp = _client().messages.create(model=config.CLAUDE_MODEL, max_tokens=450,
                                      messages=[{"role": "user", "content": prompt}])
     return "".join(b.text for b in resp.content if b.type == "text").strip()

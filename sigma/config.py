@@ -89,6 +89,8 @@ AUTO_SCAN = _get("AUTO_SCAN", "1") == "1"
 AUTO_PAPER_TRADE = _get("AUTO_PAPER_TRADE", "1") == "1"
 MIN_PROBABILITY = _float("MIN_PROBABILITY", 0.45)   # min calibrated P(win) to signal
 MIN_EXPECTANCY_R = _float("MIN_EXPECTANCY_R", 0.10)  # min expected R per trade
+BREAKEVEN_R = _float("BREAKEVEN_R", 1.0)             # move paper stops to entry once this far in profit (0 = off)
+MOMENTUM_VETO = _float("MOMENTUM_VETO", 0.25)        # no signal when momentum points against the trade this strongly
 REWARD_R = _float("REWARD_R", 2.0)                   # main TP (used for paper trades and learning), in R
 TP_LEVELS = [float(x) for x in _get("TP_LEVELS", "1,2,3,4").split(",") if x.strip()]  # TP1..TPn, in R
 SL_ATR_MULT = _float("SL_ATR_MULT", 1.5)
