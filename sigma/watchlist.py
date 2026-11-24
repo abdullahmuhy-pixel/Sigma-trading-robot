@@ -10,7 +10,36 @@ FOCUS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "
          "EURGBP", "USDZAR", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"]      # forex, gold/silver, crypto
 DEFAULT = {"symbols": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "XAUUSD", "USDZAR", "BTCUSD", "ETHUSD"],
            "timeframes": ["M15", "H1"], "enabled": True}
-MAX_SYMBOLS = 30
+MAX_SYMBOLS = 40
+# Deriv's forex list, used only if the live catalogue can't be loaded
+DERIV_FX_FALLBACK = ["AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "EURAUD", "EURCAD", "EURCHF", "EURGBP",
+                     "EURJPY", "EURNZD", "EURUSD", "GBPAUD", "GBPCAD", "GBPCHF", "GBPJPY", "GBPNOK", "GBPNZD",
+                     "GBPUSD", "NZDJPY", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "USDMXN", "USDNOK", "USDPLN",
+                     "USDSEK"]
+
+
+def currency_pairs(currencies=("JPY", "USD", "EUR", "GBP"), extra=("USDZAR",)) -> list[str]:
+    """Every forex pair Deriv offers that contains one of `currencies` (from the live catalogue)."""
+    pairs = []
+    try:
+        from .data.deriv_catalog import catalog
+        pairs = [i["symbol"][3:] for i in catalog()
+                 if i.get("market") == "forex" and str(i.get("symbol", "")).startswith("frx") and len(i["symbol"]) == 9]
+    except Exception:
+        pairs = []
+    pairs = pairs or list(DERIV_FX_FALLBACK)
+    pairs += [e for e in extra if e not in pairs]
+    want = [p for p in pairs if p[:3] in currencies or p[3:] in currencies]
+    major = ["EURUSD", "GBPUSD", "USDJPY"]          # the most liquid first, then alphabetical
+    return [p for p in major if p in want] + sorted(p for p in want if p not in major)
+
+
+def preset(name: str) -> dict:
+    if name == "fx_metals":
+        return set_symbols(currency_pairs() + ["XAUUSD", "XAGUSD"])
+    if name == "focus":
+        return set_symbols(FOCUS)
+    raise ValueError(f"unknown preset {name}")
 SCANS_PER_DAY = {"M1": 1440, "M5": 288, "M15": 96, "M30": 48, "H1": 24, "H4": 6, "D1": 1}
 
 

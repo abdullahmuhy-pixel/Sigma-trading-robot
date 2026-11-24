@@ -92,3 +92,20 @@ def test_watchlist_reports_market_types():
     w = watchlist.get()
     assert w["classes"] == {"EURUSD": "forex", "R_75": "synthetic", "XAUUSD": "metal"}
     assert all(watchlist.resolve(s).asset_class in ("forex", "metal", "crypto") for s in w["focus"])
+
+
+def test_fx_metals_preset(monkeypatch):
+    import os, tempfile
+    from sigma import db, watchlist
+    from sigma.data import deriv_catalog
+    db.connect(os.path.join(tempfile.mkdtemp(), "p.db"))
+    monkeypatch.setattr(deriv_catalog, "catalog", lambda force=False: [
+        {"symbol": f"frx{p}", "market": "forex"} for p in ["AUDCAD", "AUDJPY", "EURUSD", "GBPUSD", "USDJPY", "NZDUSD", "AUDNZD", "EURGBP"]]
+        + [{"symbol": "R_75", "market": "synthetic_index"}, {"symbol": "frxXAUUSD", "market": "commodities"}])
+    w = watchlist.preset("fx_metals")
+    assert w["symbols"][:3] == ["EURUSD", "GBPUSD", "USDJPY"]
+    assert set(w["symbols"]) == {"EURUSD", "GBPUSD", "USDJPY", "AUDJPY", "NZDUSD", "EURGBP", "USDZAR", "XAUUSD", "XAGUSD"}
+    # without the live catalogue: Deriv's known list (AUDCAD, AUDCHF, AUDNZD have none of the four currencies)
+    monkeypatch.setattr(deriv_catalog, "catalog", lambda force=False: [])
+    syms = watchlist.preset("fx_metals")["symbols"]
+    assert len(syms) == 25 + 1 + 2 and "AUDCAD" not in syms and "GBPNOK" in syms

@@ -464,11 +464,9 @@ def test_background_watchlist(offline, monkeypatch):
     assert w["scans_per_day"] == 3 * (96 + 24)                                       # 360 quick analyses a day
     with pytest.raises(ValueError):
         watchlist.set_timeframes([])
-    with pytest.raises(ValueError):
-        watchlist.set_symbols([f"R_{n}" for n in (10, 25, 50, 75, 100)] * 1 + [f"EUR{c}" for c in
-                              ("USD", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "ZAR", "SEK", "NOK")] +
-                              [f"USD{c}" for c in ("JPY", "CHF", "CAD", "ZAR", "SEK", "NOK", "MXN", "SGD", "TRY", "PLN",
-                               "HKD")] + ["GBPJPY", "AUDJPY", "NZDJPY", "XAUUSD", "XAGUSD"])
+    with pytest.raises(ValueError):          # more than MAX_SYMBOLS (40) distinct markets
+        ccy = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD"]
+        watchlist.set_symbols([a + b for a in ccy for b in ccy if a != b][:watchlist.MAX_SYMBOLS + 1])
     # the background scan uses exactly the watchlist
     seen = []
     monkeypatch.setattr(engine, "analyze", lambda s, tf, source="live": seen.append(s) or {"is_signal": False})

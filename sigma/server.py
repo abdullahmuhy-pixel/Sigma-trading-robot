@@ -455,11 +455,14 @@ class WatchlistIn(BaseModel):
     remove: list[str] | None = None
     timeframes: list[str] | None = None
     enabled: bool | None = None
+    preset: str | None = None            # fx_metals | focus
 
 
 @app.post("/api/watchlist")
 def edit_watchlist(body: WatchlistIn):
     try:
+        if body.preset:
+            watchlist.preset(body.preset)
         if body.symbols is not None:
             watchlist.set_symbols(body.symbols)
         if body.add:

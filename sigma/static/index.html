@@ -680,6 +680,7 @@ function renderWatch(){const w=WL;if(!w)return;const spd=w.symbols.length*w.time
    <h4 style="margin-top:14px">Markets (${w.symbols.length})</h4>
    <div class="chips">${w.symbols.map(c=>`<span class="chip">${esc(nameOf(c))}<b data-wrm="${esc(c)}" title="Remove">✕</b></span>`).join('')||'<span class="muted">No markets: nothing will be scanned.</span>'}</div>
    <button id="w_add">+ Add market</button>
+   <button class="ghost" id="w_fxm" title="Every JPY, USD, EUR and GBP pair on Deriv, plus gold and silver">All JPY, USD, EUR &amp; GBP pairs + gold &amp; silver</button>
    <button class="ghost" id="w_focus" title="Replace the list with forex, gold, silver and crypto">Forex, gold &amp; crypto only</button>
    <button class="ghost" id="w_nosyn">Remove synthetics</button>
    <h4 style="margin-top:16px">Timeframes <span class="muted" style="text-transform:none;letter-spacing:0">(tick as many as you like)</span></h4>
@@ -696,6 +697,9 @@ function renderWatch(){const w=WL;if(!w)return;const spd=w.symbols.length*w.time
     const ordered=['M5','M15','M30','H1','H4','D1'].filter(x=>nxt.includes(x));saveWatch(w=>({...w,timeframes:ordered}),{timeframes:ordered})});
   $('#w_focus').onclick=()=>{if(!confirm('Replace the watchlist with 11 forex pairs, gold, silver, Bitcoin and Ethereum?'))return;
     const F=WL.focus||[];saveWatch(w=>({...w,symbols:F}),{symbols:F});toast('Watchlist: forex, gold & crypto')};
+  $('#w_fxm').onclick=async()=>{if(!confirm('Replace the watchlist with every JPY, USD, EUR and GBP forex pair plus gold and silver?'))return;
+    const st=$('#w_state');if(st)st.textContent='saving…';
+    try{WL=await post('/api/watchlist',{preset:'fx_metals'});renderWatch();toast(`Watchlist: ${WL.symbols.length} markets`)}catch(e){toast(esc(e.message))}};
   $('#w_nosyn').onclick=()=>{const keep=WL.symbols.filter(c=>!isSynthetic(c));if(keep.length===WL.symbols.length){toast('No synthetic indices on the list');return}
     saveWatch(w=>({...w,symbols:keep}),{symbols:keep});toast(`Removed ${WL.symbols.length-keep.length} synthetic indices`)};
   $('#w_all').onclick=()=>{const all=['M5','M15','M30','H1','H4','D1'];saveWatch(w=>({...w,timeframes:all}),{timeframes:all})}}
