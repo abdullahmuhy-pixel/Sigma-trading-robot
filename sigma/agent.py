@@ -107,6 +107,14 @@ TOOLS = [
     {"name": "economic_calendar", "description": "This week's economic events, optionally for some currencies.",
      "input_schema": {"type": "object", "properties": {"currencies": {"type": "array", "items": {"type": "string"}},
                                                        "impact": {"type": "string", "enum": ["High", "Medium", "Low", "any"]}}}},
+    {"name": "copy_trading", "description": "Copying the robot's paper trades to a real account (sized from the "
+     "real balance, trailing stop once in profit). 'status' shows balance, open copies with live R, recent copies "
+     "and skips; 'start'/'stop' run it; 'set' changes risk_pct, max_open, daily_loss_pct, trailing. Switching to the "
+     "REAL account is only possible on the Paper trading page with the user's typed confirmation.",
+     "input_schema": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["status", "start", "stop", "set"]},
+         "risk_pct": {"type": "number"}, "max_open": {"type": "integer"}, "daily_loss_pct": {"type": "number"},
+         "trail_start_r": {"type": "number"}, "trail_distance_r": {"type": "number"}}, "required": ["action"]}},
     {"name": "data_sources", "description": "Live check of every data source Sigma uses (Deriv prices, calendar "
      "and hours, Binance, Twelve Data, Myfxbook, IG, Hyperliquid, Kraken, OKX): which work from the server right now "
      "and which are not set up. Takes ~10-20 seconds.",
@@ -300,6 +308,20 @@ def run_tool(name: str, args: dict) -> object:
         imp = args.get("impact", "any")
         return [{**e, "time": _local(e["time"])} for e in news.calendar()
                 if (not ccys or e["currency"] in ccys) and (imp in (None, "any") or e["impact"] == imp)][:60]
+    if name == "copy_trading":
+        from . import copytrade
+        act = args["action"]
+        if act == "set":
+            copytrade.update_settings(**{k: args[k] for k in ("risk_pct", "max_open", "daily_loss_pct",
+                                                              "trail_start_r", "trail_distance_r") if args.get(k) is not None})
+        elif act == "start":
+            copytrade.start()
+        elif act == "stop":
+            copytrade.stop()
+        st = copytrade.status()
+        st["log"] = [x["msg"] for x in st["log"][-12:]]
+        st["history"] = st.get("history", [])[:15]
+        return st
     if name == "data_sources":
         from .data import sources
         return sources.check_all()

@@ -542,6 +542,58 @@ def bot_trades(limit: int = 100, account: str | None = None):
     return {"trades": rows, "stats": review.stats(acct), "learning": review.learning()}
 
 
+@app.get("/api/copy")
+def copy_status():
+    from . import copytrade
+    return copytrade.status()
+
+
+class CopyIn(BaseModel):
+    action: str | None = None            # start | stop | stop_close | reset
+    account: str | None = None           # paper | deriv
+    risk_pct: float | None = None
+    max_open: int | None = None
+    daily_loss_pct: float | None = None
+    copy_mode: str | None = None         # all | signals
+    trail_start_r: float | None = None
+    trail_distance_r: float | None = None
+    paper_start_balance: float | None = None
+    confirm_live: str | None = None
+
+
+@app.post("/api/copy")
+def copy_control(body: CopyIn):
+    from . import copytrade
+    try:
+        s = copytrade.settings()
+        f = body.model_dump(exclude={"action", "confirm_live"}, exclude_none=True)
+        if "copy_mode" in f:
+            f["copy"] = f.pop("copy_mode")
+        if body.account and body.account != s["account"] and s["running"]:
+            raise ValueError("Stop copy trading before switching accounts.")
+        if body.account and body.account != "paper":
+            if (body.confirm_live or "").strip().upper() != "I UNDERSTAND THE RISK":
+                raise ValueError('Copying to a real account needs the phrase "I UNDERSTAND THE RISK".')
+            from .autobot import brokers
+            brokers.DerivBroker().balance()           # proves the token works before switching
+            f["live_confirmed"] = True
+        elif body.account == "paper":
+            f["live_confirmed"] = False
+        if f:
+            copytrade.update_settings(**f)
+        if body.action == "start":
+            copytrade.start()
+        elif body.action in ("stop", "stop_close"):
+            copytrade.stop(close_all=body.action == "stop_close")
+        elif body.action == "reset":
+            copytrade.reset_paper(body.paper_start_balance)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"broker: {e}")
+    return copytrade.status(light=True)
+
+
 @app.get("/api/sources")
 def data_sources():
     from .data import sources

@@ -185,6 +185,27 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
       </div>
       <p class="muted">The demo account trades every robot signal and every instrument you analyse. Each trade risks the set % of the current balance.</p>
     </div>
+    <div class="box" id="copybox"><h4>Copy these trades to a real account <span id="cstate" class="state stop">off</span></h4>
+      <p class="muted">Every trade the demo account opens is copied with the same stop and target levels, sized from the
+        real account's balance (the loss at the stop = your risk %). Once a copy is in profit its stop trails behind price.</p>
+      <div class="grid4" id="ckpi"></div>
+      <div class="form">
+        <label>Copy to<select id="c_acct"><option value="paper">Test account (no real money)</option><option value="deriv">Deriv real/demo account (API)</option></select></label>
+        <label>Risk per trade %<input id="c_risk" type="number" min="0.1" max="3" step="0.1" style="width:80px"></label>
+        <label>Max open<input id="c_max" type="number" min="1" max="10" step="1" style="width:70px"></label>
+        <label>Daily loss limit %<input id="c_dl" type="number" min="0.5" max="10" step="0.5" style="width:80px"></label>
+        <label>Trail from (R)<input id="c_ts" type="number" min="0.3" max="3" step="0.1" style="width:70px"></label>
+        <label>Trail distance (R)<input id="c_td" type="number" min="0.3" max="3" step="0.1" style="width:70px"></label>
+        <label>Copy<select id="c_copy"><option value="all">all demo trades</option><option value="signals">robot signals only</option></select></label>
+      </div>
+      <div class="form"><button id="c_save" class="ghost">Save settings</button><button id="c_start">Start copying</button>
+        <button id="c_stop" class="ghost">Stop</button><button id="c_stopc" class="danger">Stop &amp; close copies</button>
+        <button id="c_reset" class="ghost">Reset test account</button></div>
+      <p class="muted" id="c_note">Deriv needs <code>DERIV_API_TOKEN</code> in Render → Environment (use a Deriv demo token first).
+        R = the trade's stop distance: at +1R the stop moves to breakeven, then it trails 1R behind the best price.</p>
+      <div class="scroll" id="cpos"></div><div class="scroll" id="chist"></div>
+      <div class="logl" id="clog"></div>
+    </div>
     <div class="box"><h4>Your real-account goal</h4><div id="goal"></div></div>
     <h3>Open positions</h3><div class="scroll" id="openpos"></div>
     <h3>Pending orders</h3><div class="scroll" id="pendpos"></div>
@@ -285,8 +306,44 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+p));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
-  if(p==='paper')loadPaper();if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
+  if(p==='paper'){loadPaper();loadCopy()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
+// ---------------- copy trading
+let copyTimer=null;const CF=['#c_risk','#c_max','#c_dl','#c_ts','#c_td'];
+CF.forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.dirty='1';$('#c_save').textContent='Save settings •'}));
+function loadCopy(){clearInterval(copyTimer);renderCopy();copyTimer=setInterval(()=>{if(location.hash==='#paper')renderCopy();else clearInterval(copyTimer)},8000)}
+function copyLook(on,label){$('#cstate').textContent=label;$('#cstate').className='state '+(on?'run':'stop')}
+async function renderCopy(){let c;try{c=await api('/api/copy')}catch(e){return}
+  const s=c.settings,cur=c.currency||'USD';copyLook(s.running,s.running?(s.account==='paper'?'copying → test account':'copying → DERIV'):'off');
+  const fill=(id,v)=>{const el=$(id);if(!el.dataset.dirty&&document.activeElement!==el)el.value=v};
+  fill('#c_risk',s.risk_pct);fill('#c_max',s.max_open);fill('#c_dl',s.daily_loss_pct);fill('#c_ts',s.trail_start_r);fill('#c_td',s.trail_distance_r);
+  if(document.activeElement!==$('#c_acct'))$('#c_acct').value=s.account;if(document.activeElement!==$('#c_copy'))$('#c_copy').value=s.copy;
+  const st=c.stats||{};
+  $('#ckpi').innerHTML=(c.error?`<p class="warn">${esc(c.error)}</p>`:'')+kv(s.account==='paper'?'Test balance':'Deriv balance',money(c.balance,cur))
+    +kv('Banked today',money(c.realized_today,cur),cls(c.realized_today))+kv('Copies',st.trades??0)+kv('Win rate',pct(st.win_rate))
+    +kv('Net',money(st.net,cur),cls(st.net))+kv('Trailing exits',st.trailing_exits??0);
+  $('#cpos').innerHTML=table([['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],['Entry',t=>fx(t.entry)],['SL',t=>fx(t.sl_price)],['TP',t=>fx(t.tp_price)],
+    ['Stake',t=>money(t.stake)],['Risk',t=>money(t.sl_usd)],['Now',t=>t.r_now!=null?`<span class="${cls(t.r_now)}">${t.r_now>0?'+':''}${t.r_now}R</span>`:'–'],
+    ['P/L',t=>`<span class="${cls(t.pnl_now)}">${money(t.pnl_now)}</span>`],['Best',t=>'+'+(t.best_r||0).toFixed(1)+'R'],
+    ['Trailing stop',t=>t.trail_r==null?'not yet':(t.trail_r<=0.1?'breakeven':'+'+t.trail_r.toFixed(1)+'R')]],c.positions||[],'No copies open.');
+  $('#chist').innerHTML=table([['When',t=>fmtT(t.closed_at||t.opened_at)],['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],
+    ['Result',t=>t.status==='skipped'?'<span class="muted">skipped</span>':`<span class="${cls(t.pnl)}">${money(t.pnl)}</span>`],
+    ['Why',t=>esc(t.close_reason||t.note||'')]],(c.history||[]).slice(0,25),'');
+  $('#clog').innerHTML=(c.log||[]).slice(-8).reverse().map(l=>`<div class="${l.level==='warn'?'warn':''}">${fmtT(l.t)}  ${esc(l.msg)}</div>`).join('')}
+async function copyDo(body,btn,ok){if(btn)btn.disabled=true;
+  try{await post('/api/copy',body);if(ok)toast(ok);renderCopy()}catch(e){toast(esc(e.message));renderCopy()}finally{if(btn)btn.disabled=false}}
+$('#c_start').onclick=e=>{copyLook(true,'copying…');copyDo({action:'start'},e.target,'Copy trading started')};
+$('#c_stop').onclick=e=>{copyLook(false,'off');copyDo({action:'stop'},e.target,'Copy trading stopped')};
+$('#c_stopc').onclick=e=>{if(confirm('Stop copying and close every open copy now?')){copyLook(false,'off');copyDo({action:'stop_close'},e.target,'Closing all copies')}};
+$('#c_reset').onclick=e=>{if(confirm('Reset the copy test account to its starting balance and clear its history?'))copyDo({action:'reset'},e.target,'Test account reset')};
+$('#c_save').onclick=async e=>{const n=id=>$(id).value===''?null:+String($(id).value).replace(',','.');const btn=e.target;btn.textContent='Saving…';
+  const body={risk_pct:n('#c_risk'),max_open:n('#c_max'),daily_loss_pct:n('#c_dl'),trail_start_r:n('#c_ts'),trail_distance_r:n('#c_td'),copy_mode:$('#c_copy').value};
+  try{await post('/api/copy',body);CF.forEach(id=>delete $(id).dataset.dirty);btn.textContent='Saved ✓';toast('Copy settings saved');renderCopy();
+    setTimeout(()=>{if(btn.textContent==='Saved ✓')btn.textContent='Save settings'},2000)}catch(err){btn.textContent='Save settings •';toast(esc(err.message))}};
+$('#c_acct').onchange=e=>{const a=e.target.value;const body={account:a};
+  if(a!=='paper'){const t=prompt('Copying to Deriv places REAL trades on the account behind DERIV_API_TOKEN (real money if it is a real account).\nStops and trailing reduce risk but cannot guarantee profit.\n\nType  I UNDERSTAND THE RISK  to continue:');
+    if(!t){e.target.value='paper';return}body.confirm_live=t}copyDo(body,null,a==='paper'?'Copying to the test account':'Copying to Deriv')};
+
 // ---------------- auto bot
 let botTimer=null,botSyms=[],botSymsPending=0;
 function drawBotSyms(){$('#bsyms').innerHTML=botSyms.map(x=>`<span class="chip">${esc(x)}<b data-x="${esc(x)}">×</b></span>`).join('')||'<span class="muted">No markets - add one.</span>'}

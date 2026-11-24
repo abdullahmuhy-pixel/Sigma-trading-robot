@@ -114,6 +114,23 @@ CREATE TABLE IF NOT EXISTS bot_trades (
 );
 CREATE INDEX IF NOT EXISTS ix_bot_status ON bot_trades(status, account);
 
+CREATE TABLE IF NOT EXISTS copy_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id INTEGER NOT NULL,      -- the paper trade being copied
+    account TEXT NOT NULL,          -- paper (copier test account) | deriv
+    symbol TEXT NOT NULL,
+    direction INTEGER NOT NULL,
+    entry REAL, sl_price REAL, tp_price REAL, risk_dist REAL,
+    stake REAL, multiplier INTEGER, exposure REAL, cost REAL, tp_usd REAL, sl_usd REAL,
+    opened_at REAL NOT NULL, closed_at REAL,
+    status TEXT NOT NULL,           -- open | closed | skipped
+    exit_price REAL, pnl REAL, close_reason TEXT,
+    best_r REAL DEFAULT 0, trail_r REAL,
+    broker_ref TEXT, note TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_copy_status ON copy_trades(status, account);
+CREATE INDEX IF NOT EXISTS ix_copy_trade ON copy_trades(trade_id);
+
 CREATE TABLE IF NOT EXISTS push_subs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint TEXT NOT NULL UNIQUE,  -- one row per device/browser that allowed notifications

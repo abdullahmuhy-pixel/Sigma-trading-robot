@@ -36,26 +36,28 @@ class PaperBroker:
     name = "paper"
     live = False
 
-    def __init__(self, start_balance: float = 100.0, currency: str = "USD"):
-        acct = db.kv_get("bot_paper")
+    def __init__(self, start_balance: float = 100.0, currency: str = "USD", key: str = "bot_paper"):
+        self.key = key                      # each feature keeps its own paper balance (bot / copier)
+        acct = db.kv_get(key)
         if not acct:
             acct = {"balance": float(start_balance), "start_balance": float(start_balance),
                     "currency": currency, "created_at": time.time()}
-            db.kv_set("bot_paper", acct)
+            db.kv_set(key, acct)
         self.acct = acct
+        self.currency = acct.get("currency", currency)
 
     def reset(self, start_balance: float, currency: str = "USD") -> None:
         self.acct = {"balance": float(start_balance), "start_balance": float(start_balance),
                      "currency": currency, "created_at": time.time()}
-        db.kv_set("bot_paper", self.acct)
+        db.kv_set(self.key, self.acct)
 
     def balance(self) -> float:
-        return float((db.kv_get("bot_paper") or self.acct)["balance"])
+        return float((db.kv_get(self.key) or self.acct)["balance"])
 
     def _add(self, amount: float) -> None:
-        a = db.kv_get("bot_paper") or self.acct
+        a = db.kv_get(self.key) or self.acct
         a["balance"] = round(float(a["balance"]) + amount, 6)
-        db.kv_set("bot_paper", a)
+        db.kv_set(self.key, a)
         self.acct = a
 
     def price(self, symbol: str) -> float:

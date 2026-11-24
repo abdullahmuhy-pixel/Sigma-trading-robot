@@ -104,6 +104,8 @@ def start() -> None:
     try:
         from .autobot import bot
         bot.resume_if_running()
+        from . import copytrade
+        copytrade.resume_if_running()
     except Exception as e:
         _err(f"bot resume: {e}")
     if config.AUTO_SCAN:

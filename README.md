@@ -122,6 +122,15 @@ long → leans bearish), weighted by what its own results show it is worth.
 
 Either one is enough; with both, the readings are averaged. Synthetic indices have no crowd data.
 
+## Copy trading (Paper trading page)
+
+Copies every trade the demo account opens to a real account (Deriv via the API, or a test account first):
+same direction and the same stop/target price levels, but sized from the real balance so the loss at the
+stop is your risk % (1% default). Only fresh trades are copied (within 5 min, price within 0.3R of entry).
+Once a copy is +1R the stop moves to breakeven, then trails 1R behind the best price (checked every 10 s);
+the original stop and target also sit on Deriv's side. Copies close when the paper trade closes. Daily
+loss limit and a cap on open copies apply. Switching to Deriv needs a typed confirmation.
+
 ## Auto bot (🤖 page)
 
 An automatic trader that runs on its own paper account (default) or a live Deriv account.
