@@ -523,6 +523,8 @@ def bot_control(body: BotIn):
             bot.reset(body.paper_start_balance)
         elif body.action == "relearn":
             review.relearn()
+        if body.action in ("start", "stop"):
+            return bot.status(light=True)       # instant answer; the page refreshes the numbers itself
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

@@ -294,8 +294,8 @@ async function loadBot(){clearInterval(botTimer);await renderBot();await renderB
 async function renderBot(){let b;try{b=await api('/api/bot')}catch(e){$('#bwarn').innerHTML=`<p class="warn">${esc(e.message)}</p>`;return}
   const s=b.settings,st=b.state||{},c=b.currency||s.currency;
   const halted=st.halted;const run=s.running&&b.thread_alive;
-  $('#bstate').textContent=halted?'stopped: '+halted.reason:run?'running':s.running?'starting…':'stopped';
-  $('#bstate').className='state '+(halted?'halt':run?'run':'stop');
+  $('#bstate').textContent=halted?'stopped: '+halted.reason:s.running?'running':'stopped';
+  $('#bstate').className='state '+(halted?'halt':s.running?'run':'stop');
   $('#bacct').textContent=s.account==='paper'?'PAPER account':'LIVE · '+s.account.toUpperCase();
   $('#bacct').className='pill '+(s.account==='paper'?'':'ok');
   $('#bwarn').innerHTML=(b.error?`<p class="warn">${esc(b.error)}</p>`:'')+(b.target_warning?`<p class="warn">⚠ ${esc(b.target_warning)}</p>`:'');
@@ -323,8 +323,16 @@ async function renderBotTrades(){let r;try{r=await api('/api/bot/trades')}catch(
   $('#bclosed').innerHTML=table([['Closed',t=>fmtT(t.closed_at)],['Mode',t=>t.mode],['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],
     ['P/L',t=>`<span class="${cls(t.pnl)}">${money(t.pnl)}</span>`],['Best',t=>money(t.max_profit)],['Why closed',t=>esc(t.close_reason)],
     ['Held',t=>((t.closed_at-t.opened_at)/60).toFixed(1)+' min']],r.trades.slice(0,60),'No closed trades yet.')}
-async function botDo(body,btn){if(btn)btn.disabled=true;try{await post('/api/bot',body);await renderBot();await renderBotTrades()}
-  catch(e){alert(e.message)}finally{if(btn)btn.disabled=false}}
+function botLook(state,label){$('#bstate').textContent=label;$('#bstate').className='state '+state}
+async function botDo(body,btn){
+  // show the result straight away; the server confirms in the background
+  const prev=[$('#bstate').textContent,$('#bstate').className];
+  if(body.action==='start')botLook('run','running');
+  if(body.action==='stop'||body.action==='stop_close')botLook('stop',body.action==='stop'?'stopped':'stopping & closing…');
+  if(btn)btn.disabled=true;
+  try{await post('/api/bot',body);renderBot();renderBotTrades()}
+  catch(e){$('#bstate').textContent=prev[0];$('#bstate').className=prev[1];alert(e.message)}
+  finally{if(btn)btn.disabled=false}}
 $('#bstart').onclick=e=>botDo({action:'start'},e.target);
 $('#bstop').onclick=e=>botDo({action:'stop'},e.target);
 $('#bstopc').onclick=e=>{if(confirm('Stop the bot and close every open position now?'))botDo({action:'stop_close'},e.target)};

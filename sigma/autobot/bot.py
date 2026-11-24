@@ -432,6 +432,7 @@ def _loop() -> None:
     last_entry = 0.0
     broker = None
     say("Bot started.")
+    time.sleep(2)        # let the Start reply reach the app before the first (CPU-heavy) cycle
     while settings()["running"]:
         s = settings()
         try:
@@ -462,7 +463,7 @@ def start() -> dict:
         if _thread is None or not _thread.is_alive():
             _thread = threading.Thread(target=_loop, daemon=True, name="autobot")
             _thread.start()
-    return status()
+    return status(light=True)
 
 
 def stop(close_positions: bool = False) -> dict:
@@ -472,7 +473,7 @@ def stop(close_positions: bool = False) -> dict:
             manage(brokers.get(s["account"]), s, close_all_reason="stopped by you")
         except Exception as e:
             say(f"closing on stop failed: {e}", "warn")
-    return status()
+    return status(light=True)
 
 
 def resume_if_running() -> None:
@@ -499,10 +500,13 @@ def reset(start_balance: float | None = None) -> dict:
     return status()
 
 
-def status() -> dict:
+def status(light: bool = False) -> dict:
+    """light=True skips the broker (balance, live P/L of positions) so Start/Stop answer instantly."""
     s = settings()
     st = state()
     out = {"settings": s, "state": st, "log": recent_log(), "thread_alive": bool(_thread and _thread.is_alive())}
+    if light:
+        return out
     try:
         b = brokers.get(s["account"])
         bal = b.balance()
