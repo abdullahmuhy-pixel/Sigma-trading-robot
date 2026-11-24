@@ -173,6 +173,16 @@ TOOLS = [
          "action": {"type": "string", "enum": ["schedule", "scan_now", "set_pairs", "enable", "disable"]},
          "session": {"type": "string", "enum": ["Sydney", "Tokyo", "London", "New York"]},
          "pairs": {"type": "array", "items": {"type": "string"}}}, "required": ["action"]}},
+    {"name": "auto_bot", "description": "The automatic scalping/short-trade bot. 'status' shows balance, equity, "
+     "today's P&L vs target, open positions, risk state and recent log; 'stats' shows its graded track record "
+     "(by mode/market, exit reasons, trades that gave back profit) and what it learned; 'start'/'stop' run it; "
+     "'set' changes daily_target, risk limits or markets. Switching to a LIVE account is only possible on the Bot "
+     "page with the user's typed confirmation - never claim you switched it to live.",
+     "input_schema": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["status", "stats", "start", "stop", "set"]},
+         "daily_target": {"type": "number"}, "daily_loss_pct": {"type": "number"},
+         "max_drawdown_pct": {"type": "number"}, "symbols": {"type": "array", "items": {"type": "string"}}},
+         "required": ["action"]}},
     {"name": "open_paper_trades", "description": "Currently open paper trades.",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "run_backtest", "description": "Walk-forward backtest on history; also trains the learning model. Can take a minute.",
@@ -349,6 +359,23 @@ def run_tool(name: str, args: dict) -> object:
         elif act in ("enable", "disable"):
             sessions.update(ses, enabled=act == "enable")
         return [{k: v for k, v in x.items() if k != "next_open"} for x in sessions.schedule()]
+    if name == "auto_bot":
+        from .autobot import bot, review
+        act = args["action"]
+        if act == "stats":
+            return {"stats": review.stats(bot.settings()["account"]), "learning": review.learning()}
+        if act == "set":
+            bot.update_settings(**{k: args[k] for k in ("daily_target", "daily_loss_pct", "max_drawdown_pct", "symbols")
+                                   if args.get(k) is not None})
+        elif act == "start":
+            bot.start()
+        elif act == "stop":
+            bot.stop()
+        st = bot.status()
+        st["positions"] = [{k: t.get(k) for k in ("mode", "symbol", "direction", "entry", "tp_usd", "sl_usd", "pnl_now")}
+                           for t in st.get("positions", [])]
+        st["log"] = [x["msg"] for x in st["log"][-12:]]
+        return st
     if name == "open_paper_trades":
         return [{**t, "opened_at": _local(t["opened_at"]), "expires_at": _local(t["expires_at"])}
                 for t in paper.open_positions()[:40]]

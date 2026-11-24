@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS alerts (
     session TEXT
 );
 
+CREATE TABLE IF NOT EXISTS bot_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL,          -- paper | deriv
+    mode TEXT NOT NULL,             -- scalp | short
+    symbol TEXT NOT NULL,
+    direction INTEGER NOT NULL,
+    stake REAL, multiplier INTEGER, exposure REAL, cost REAL,
+    entry REAL, tp_price REAL, sl_price REAL, tp_usd REAL, sl_usd REAL,
+    opened_at REAL NOT NULL, closed_at REAL,
+    status TEXT NOT NULL DEFAULT 'open',
+    exit_price REAL, pnl REAL, close_reason TEXT,
+    max_profit REAL DEFAULT 0, breakeven INTEGER DEFAULT 0,
+    broker_ref TEXT, group_id TEXT,
+    p_win REAL, regime TEXT, setup TEXT, components TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_bot_status ON bot_trades(status, account);
+
 CREATE TABLE IF NOT EXISTS push_subs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint TEXT NOT NULL UNIQUE,  -- one row per device/browser that allowed notifications

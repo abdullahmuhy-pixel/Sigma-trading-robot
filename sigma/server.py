@@ -474,6 +474,71 @@ def edit_watchlist(body: WatchlistIn):
     return watchlist.get()
 
 
+@app.get("/api/bot")
+def bot_status():
+    from .autobot import bot
+    return bot.status()
+
+
+class BotIn(BaseModel):
+    action: str | None = None              # start | stop | stop_close | reset | relearn
+    account: str | None = None             # paper | deriv
+    symbols: list[str] | None = None
+    daily_target: float | None = None
+    daily_loss_pct: float | None = None
+    max_drawdown_pct: float | None = None
+    risk_scalp_pct: float | None = None
+    risk_short_pct: float | None = None
+    max_open_risk_pct: float | None = None
+    scalp_tp: float | None = None
+    scalp_tp_auto: bool = False
+    paper_start_balance: float | None = None
+    confirm_live: str | None = None        # must be exactly "I UNDERSTAND THE RISK"
+
+
+@app.post("/api/bot")
+def bot_control(body: BotIn):
+    from .autobot import bot, review
+    try:
+        f = body.model_dump(exclude={"action", "confirm_live", "scalp_tp_auto"}, exclude_none=True)
+        if body.account and body.account != "paper":
+            if (body.confirm_live or "").strip().upper() != "I UNDERSTAND THE RISK":
+                raise ValueError('Live trading needs the confirmation phrase "I UNDERSTAND THE RISK".')
+            from .autobot import brokers
+            brokers.get(body.account).balance()          # proves the connection works before switching
+            f["live_confirmed"] = True
+        elif body.account == "paper":
+            f["live_confirmed"] = False
+        if body.scalp_tp_auto:
+            s = bot.settings(); s["scalp_tp"] = None; db.kv_set("bot_settings", {k: s[k] for k in bot.DEFAULTS})
+        if bot.settings()["running"] and body.account and body.account != bot.settings()["account"]:
+            raise ValueError("Stop the bot before switching accounts.")
+        if f:
+            bot.update_settings(**f)
+        if body.action == "start":
+            bot.start()
+        elif body.action in ("stop", "stop_close"):
+            bot.stop(close_positions=body.action == "stop_close")
+        elif body.action == "reset":
+            bot.reset(body.paper_start_balance)
+        elif body.action == "relearn":
+            review.relearn()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"broker: {e}")
+    return bot.status()
+
+
+@app.get("/api/bot/trades")
+def bot_trades(limit: int = 100, account: str | None = None):
+    from .autobot import bot, review
+    acct = account or bot.settings()["account"]
+    rows = db.q("SELECT * FROM bot_trades WHERE account=? AND status='closed' ORDER BY closed_at DESC LIMIT ?",
+                (acct, min(limit, 500)))
+    return {"trades": rows, "stats": review.stats(acct), "learning": review.learning()}
+
+
 @app.get("/api/calendar")
 def calendar():
     return news.calendar()

@@ -99,6 +99,11 @@ def start() -> None:
         return
     state["running"] = True
     threading.Thread(target=_monitor, daemon=True, name="monitor").start()
+    try:
+        from .autobot import bot
+        bot.resume_if_running()
+    except Exception as e:
+        _err(f"bot resume: {e}")
     if config.AUTO_SCAN:
         threading.Thread(target=_scanner, daemon=True, name="scanner").start()
         threading.Thread(target=_sessions, daemon=True, name="sessions").start()

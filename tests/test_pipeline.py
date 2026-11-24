@@ -472,3 +472,63 @@ def test_background_watchlist(offline, monkeypatch):
     scheduler.scan("H1")
     assert seen == ["BTCUSD", "R_75", "XAUUSD"]
     assert watchlist.set_enabled(False)["enabled"] is False
+
+
+def test_auto_bot_real_setups_and_routes(offline, monkeypatch):
+    """The bot's scalp/short setups run on the real engine output, and its API routes work."""
+    from sigma.autobot import bot, brokers
+    monkeypatch.setattr(market, "last_price", lambda s, max_age=2.0: float(market.candles(s, "M1", 3)["close"].iloc[-1]))
+    monkeypatch.setattr(bot, "SCALP_MIN_P", 0.0)            # force the entry path so every field is exercised
+    monkeypatch.setattr(bot.sentiment, "event_risk", lambda inst: {"blocked": False})
+    bot.update_settings(account="paper", symbols=["EURUSD", "GBPUSD"], running=True, paper_start_balance=1000)
+    b = brokers.PaperBroker(1000.0)
+    sc = bot._scalp_setup("EURUSD", {"min_p_boost": 0.0})
+    assert sc is None or (sc["mode"] == "scalp" and sc["sl_dist"] > sc["tp_dist"] > 0 and 1 <= sc["count"] <= 3)
+    sh = bot._short_setup("EURUSD", {"min_p_boost": 0.0})
+    assert sh is None or (sh["mode"] == "short" and sh["count"] == 2)
+    out = bot.step(b)
+    assert out["opened"] >= 1
+    for t in bot.open_positions("paper"):
+        assert t["sl_usd"] <= 1000 * 0.01 + 1e-6 and t["stake"] >= t["sl_usd"]
+    assert out["equity"] == pytest.approx(1000, abs=5)
+    bot.update_settings(running=False)
+
+    # API routes through the same FastAPI stub as the main server test
+    fa = types.ModuleType("fastapi")
+
+    class App:
+        def __init__(self, **k): pass
+        def _d(self, *a, **k): return lambda f: f
+        get = post = on_event = middleware = _d
+
+    class HTTPException(Exception):
+        def __init__(self, code, detail=""):
+            super().__init__(detail)
+            self.status_code = code
+    fa.FastAPI, fa.HTTPException, fa.Request = App, HTTPException, object
+    resp = types.ModuleType("fastapi.responses")
+    resp.FileResponse = lambda p, **k: p
+    resp.JSONResponse = dict
+    resp.RedirectResponse = lambda url: url
+    monkeypatch.setitem(sys.modules, "fastapi", fa)
+    monkeypatch.setitem(sys.modules, "fastapi.responses", resp)
+    sys.modules.pop("sigma.server", None)
+    import importlib
+    server = importlib.import_module("sigma.server")
+    st = server.bot_status()
+    assert st["settings"]["account"] == "paper" and "balance" in st
+    st = server.bot_control(server.BotIn(daily_target=4, risk_scalp_pct=0.5))
+    assert st["settings"]["daily_target"] == 4 and st["settings"]["risk_scalp_pct"] == 0.5
+    with pytest.raises(HTTPException) as e:                          # no confirmation phrase
+        server.bot_control(server.BotIn(account="deriv"))
+    assert e.value.status_code == 400
+    with pytest.raises(HTTPException):                               # phrase given but no token configured
+        server.bot_control(server.BotIn(account="deriv", confirm_live="I understand the risk"))
+    assert server.bot_status()["settings"]["account"] == "paper"
+    r = server.bot_trades()
+    assert "stats" in r and "learning" in r
+    # chat tool
+    from sigma import agent
+    a = agent.run_tool("auto_bot", {"action": "set", "daily_target": 6})
+    assert a["settings"]["daily_target"] == 6
+    assert "learning" in agent.run_tool("auto_bot", {"action": "stats"})

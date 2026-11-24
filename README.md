@@ -111,6 +111,24 @@ as environment variables. Put it behind a password (most hosts offer basic auth)
 `WATCHLIST`, `SCAN_TIMEFRAMES` (default M15,H1,H4), `MIN_PROBABILITY` (0.45), `MIN_EXPECTANCY_R` (0.10 R after costs),
 `REWARD_R` (take profit = 2 × risk), `SL_ATR_MULT` (1.5), `MAX_HOLD_BARS` (30), `NEWS_BLACKOUT_MIN` (30), `DISPLAY_TZ` (Africa/Johannesburg).
 
+## Auto bot (🤖 page)
+
+An automatic trader that runs on its own paper account (default) or a live Deriv account.
+
+- **Two modes, picked per market:** *short trades* when a confirmed 15-minute signal appears in a trending
+  market (2 positions: one closes at 1R, the other at 2R and moves to breakeven once the first closes);
+  *scalps* on strong 1-minute setups that agree with the 5-minute trend (several small positions, each
+  closing at a dollar profit: 50c under $300, $1 under $1,000, 0.1% of equity above; more positions on bigger accounts).
+- **Smart exits:** take profit, stop loss, *protect profit* (a position that reached 60% of its target and
+  gives most of it back is closed), and time exits for scalps (15 min in profit / 30 min max).
+- **Prop-firm rules:** daily loss limit (3%) closes everything for the day; max drawdown (8%) stops the bot
+  until you reset it; total open risk capped at 3%; 30-minute pause after 3 losses in a row; no trading
+  near high-impact news; after half the daily target it trades smaller and pickier, at the full target it stops.
+- **Self-learning:** every bot trade is graded; (mode, market) pairs with negative expectancy after 20+
+  trades are paused; scalp targets shrink when trades keep reversing after being in profit; daily self-review notification.
+- **Brokers:** paper and Deriv (API, Multipliers with take profit / stop loss in money). Set
+  `DERIV_API_TOKEN` in Render → Environment; going live needs a typed confirmation on the Bot page.
+
 ## Honest notes
 
 - Paper results are not live results: real fills, slippage and spreads during news differ. Treat any market as unproven

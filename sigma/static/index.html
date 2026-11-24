@@ -87,6 +87,12 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
 .wbar{display:flex;align-items:center;gap:8px;margin:4px 0;font:12.5px var(--mono)}
 .wbar .lbl{width:150px;color:var(--dim)}.wbar .track{flex:1;height:10px;background:var(--panel2);border-radius:5px;position:relative}
 .wbar .fill{position:absolute;top:0;height:10px;border-radius:5px}
+.prog{height:12px;background:var(--panel2);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.prog i{display:block;height:100%;background:var(--up)}
+.logl{font:12px var(--mono);color:var(--dim);max-height:260px;overflow:auto;white-space:pre-wrap}
+.logl .warn{color:#f5b83d}
+.state{font-weight:700;padding:3px 10px;border-radius:14px;font-size:12px}
+.state.run{background:#123622;color:var(--up)}.state.stop{background:#2a2f37;color:#bbb}.state.halt{background:#3a1515;color:var(--down)}
 .form{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
 .warn{color:#f5b83d}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
@@ -125,6 +131,7 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
     <a href="#chart" data-p="chart"><span>📈</span>Chart</a>
     <a href="#paper" data-p="paper"><span>💰</span>Paper trading</a>
     <a href="#markets" data-p="markets"><span>📡</span>Markets</a>
+    <a href="#bot" data-p="bot"><span>🤖</span>Auto bot</a>
   </nav>
   <div class="spacer"></div>
   <span id="clock" class="pill hide-sm"></span>
@@ -207,6 +214,40 @@ table.grid td{border-bottom:1px solid #1a2230;padding:6px;font-family:var(--mono
     </div>
     <div class="sub" id="s-cal"></div>
   </div></section>
+  <section class="page" id="page-bot"><div class="wrap">
+    <div class="bar" style="padding:12px 0;border:0"><span class="big">Auto bot</span><span id="bstate" class="state stop">stopped</span>
+      <span class="spacer"></span><span id="bacct" class="pill"></span>
+      <button id="bstart">Start</button><button id="bstop" class="ghost">Stop</button><button id="bstopc" class="danger">Stop &amp; close all</button></div>
+    <div id="bwarn"></div>
+    <div class="grid4" id="bkpi"></div>
+    <div class="box"><h4>Today's target</h4><div class="prog"><i id="bprog" style="width:0"></i></div>
+      <p class="muted" id="bprogt" style="margin:6px 0 0"></p></div>
+    <h3>Open positions</h3><div class="scroll" id="bpos"></div>
+    <div class="box"><h4>Rules &amp; risk (prop-firm style)</h4>
+      <div class="form">
+        <label>Daily target<input id="b_tgt" type="number" min="0.01" step="any" style="width:100px"></label>
+        <label>Daily loss limit %<input id="b_dl" type="number" min="0.5" max="10" step="0.5" style="width:90px"></label>
+        <label>Max drawdown %<input id="b_dd" type="number" min="2" max="30" step="0.5" style="width:90px"></label>
+        <label>Risk per scalp %<input id="b_rs" type="number" min="0.05" max="2" step="0.05" style="width:90px"></label>
+        <label>Risk per short trade %<input id="b_rt" type="number" min="0.1" max="3" step="0.1" style="width:90px"></label>
+        <label>Scalp take profit ($, blank = auto)<input id="b_tp" type="number" min="0.1" step="any" style="width:110px"></label>
+        <button id="b_save">Save rules</button></div>
+      <p class="muted">Hits the daily loss limit → closes everything and stops until tomorrow. Hits the max drawdown → stops until you reset.
+        After half the target is banked it trades smaller and pickier; at the full target it stops for the day. Three losses in a row → 30-minute pause.
+        No new trades near high-impact news.</p></div>
+    <div class="box"><h4>Markets the bot trades</h4><div class="chips" id="bsyms"></div>
+      <button class="ghost" id="baddsym">+ Add market</button></div>
+    <div class="box"><h4>Account</h4>
+      <div class="form">
+        <label>Trade on<select id="b_acct"><option value="paper">Bot paper account (no real money)</option><option value="deriv">Deriv (live API)</option></select></label>
+        <label>Paper starting balance<input id="b_pbal" type="number" min="10" step="any" style="width:110px"></label>
+        <button id="b_acsave" class="ghost">Switch account</button><button id="b_reset" class="danger">Reset paper account</button></div>
+      <p class="muted" id="b_acnote">Deriv needs <code>DERIV_API_TOKEN</code> (a token with the Trade scope) set in Render → Environment. Use a Deriv <b>demo</b> token first.
+        Switching to live asks you to type a confirmation.</p></div>
+    <h3>How it is doing</h3><div class="grid4" id="bstats"></div><div id="blearn" class="muted"></div>
+    <h3>Closed trades</h3><div class="scroll" id="bclosed"></div>
+    <h3>Bot log</h3><div class="box logl" id="blog"></div>
+  </div></section>
 </main>
 
 <div id="picker"><div id="pbox">
@@ -238,13 +279,65 @@ const dirTxt=(d,o)=>`<span class="${d>0?'long':'short'}">${esc(o||(d>0?'BUY':'SE
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('en-ZA',{timeZone:TZ})+' SAST',1000);
 
 // ---------------- pages (each has its own address: #chat, #chart, #paper, #markets)
-const PAGES=['chat','chart','paper','markets'];
+const PAGES=['chat','chart','paper','markets','bot'];
 function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.slice(1):'chat';
   document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+p));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
-  if(p==='paper')loadPaper();if(p==='markets')loadMarkets();if(p==='chat')$('#msgs').scrollTop=1e9}
+  if(p==='paper')loadPaper();if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
+// ---------------- auto bot
+let botTimer=null,botSyms=[];
+async function loadBot(){clearInterval(botTimer);await renderBot();await renderBotTrades();
+  botTimer=setInterval(()=>{if(location.hash==='#bot')renderBot();else clearInterval(botTimer)},5000)}
+async function renderBot(){let b;try{b=await api('/api/bot')}catch(e){$('#bwarn').innerHTML=`<p class="warn">${esc(e.message)}</p>`;return}
+  const s=b.settings,st=b.state||{},c=b.currency||s.currency;
+  const halted=st.halted;const run=s.running&&b.thread_alive;
+  $('#bstate').textContent=halted?'stopped: '+halted.reason:run?'running':s.running?'starting…':'stopped';
+  $('#bstate').className='state '+(halted?'halt':run?'run':'stop');
+  $('#bacct').textContent=s.account==='paper'?'PAPER account':'LIVE · '+s.account.toUpperCase();
+  $('#bacct').className='pill '+(s.account==='paper'?'':'ok');
+  $('#bwarn').innerHTML=(b.error?`<p class="warn">${esc(b.error)}</p>`:'')+(b.target_warning?`<p class="warn">⚠ ${esc(b.target_warning)}</p>`:'');
+  $('#bkpi').innerHTML=kv('Balance',money(b.balance,c))+kv('Equity',money(b.equity,c))+kv('Open P/L',money(b.unrealized,c),cls(b.unrealized))
+    +kv('Banked today',money(b.realized_today,c),cls(b.realized_today))+kv('Max scalps now',b.max_scalps??'–')+kv('Scalp target',money(b.scalp_tp_now,c));
+  const pr=Math.max(0,Math.min(1,b.target_progress||0));$('#bprog').style.width=(pr*100)+'%';
+  $('#bprog').style.background=pr>=1?'var(--up)':pr>=.5?'var(--accent)':'var(--blue)';
+  $('#bprogt').textContent=`${money(b.realized_today,c)} of ${money(s.daily_target,c)} (${(pr*100).toFixed(0)}%). Minimum aim: half the target. Daily loss limit: ${money(-(st.day_start_equity||b.balance||0)*s.daily_loss_pct/100,c)}.`;
+  $('#bpos').innerHTML=table([['Mode',t=>t.mode],['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],['Entry',t=>fx(t.entry)],['Now',t=>fx(t.price_now)],
+    ['Stake',t=>money(t.stake)],['×',t=>t.multiplier],['Target',t=>money(t.tp_usd)],['Max loss',t=>money(t.sl_usd)],['P/L',t=>`<span class="${cls(t.pnl_now)}">${money(t.pnl_now)}</span>`],
+    ['Best',t=>money(t.max_profit)],['Opened',t=>fmtT(t.opened_at)]],b.positions,'No open positions.');
+  if(document.activeElement?.closest?.('#page-bot .form')==null){
+    $('#b_tgt').value=s.daily_target;$('#b_dl').value=s.daily_loss_pct;$('#b_dd').value=s.max_drawdown_pct;$('#b_rs').value=s.risk_scalp_pct;
+    $('#b_rt').value=s.risk_short_pct;$('#b_tp').value=s.scalp_tp??'';$('#b_acct').value=s.account;$('#b_pbal').value=s.paper_start_balance}
+  botSyms=s.symbols;$('#bsyms').innerHTML=botSyms.map(x=>`<span class="chip">${esc(x)}<b data-x="${esc(x)}">×</b></span>`).join('');
+  $('#blog').innerHTML=b.log.slice().reverse().map(l=>`<div class="${l.level==='warn'?'warn':''}">${fmtT(l.t)}  ${esc(l.msg)}</div>`).join('')||'Nothing yet.'}
+async function renderBotTrades(){let r;try{r=await api('/api/bot/trades')}catch(e){return}
+  const o=r.stats.overall||{};const sc=r.stats.scalp||{},sh=r.stats.short||{};
+  $('#bstats').innerHTML=kv('Trades',o.trades||0)+kv('Win rate',pct(o.win_rate))+kv('Net',money(o.net),cls(o.net))+kv('Profit factor',o.profit_factor??'–')
+    +kv('Scalps',`${sc.trades||0} · ${pct(sc.win_rate)}`)+kv('Short trades',`${sh.trades||0} · ${pct(sh.win_rate)}`)+kv('Gave back profit',o.gave_back_after_profit??0)+kv('Avg hold (min)',o.avg_minutes??'–');
+  const L=r.learning||{};const paused=Object.keys(L.paused||{});
+  $('#blearn').innerHTML=`Scalp targets are at <b>${((L.scalp_tp_factor||1)*100).toFixed(0)}%</b> of normal (adjusted from trades that reversed after being in profit).`
+    +(paused.length?` Paused for losing: <b>${paused.map(esc).join(', ')}</b>.`:' No setups paused.')
+    +(Object.keys(r.stats.exit_reasons||{}).length?' Exits: '+Object.entries(r.stats.exit_reasons).map(([k,v])=>`${esc(k)} ${v}`).join(' · '):'');
+  $('#bclosed').innerHTML=table([['Closed',t=>fmtT(t.closed_at)],['Mode',t=>t.mode],['Market',t=>esc(t.symbol)],['Side',t=>dirTxt(t.direction)],
+    ['P/L',t=>`<span class="${cls(t.pnl)}">${money(t.pnl)}</span>`],['Best',t=>money(t.max_profit)],['Why closed',t=>esc(t.close_reason)],
+    ['Held',t=>((t.closed_at-t.opened_at)/60).toFixed(1)+' min']],r.trades.slice(0,60),'No closed trades yet.')}
+async function botDo(body,btn){if(btn)btn.disabled=true;try{await post('/api/bot',body);await renderBot();await renderBotTrades()}
+  catch(e){alert(e.message)}finally{if(btn)btn.disabled=false}}
+$('#bstart').onclick=e=>botDo({action:'start'},e.target);
+$('#bstop').onclick=e=>botDo({action:'stop'},e.target);
+$('#bstopc').onclick=e=>{if(confirm('Stop the bot and close every open position now?'))botDo({action:'stop_close'},e.target)};
+$('#b_save').onclick=e=>{const n=id=>$(id).value===''?null:+$(id).value;const tp=n('#b_tp');
+  botDo({daily_target:n('#b_tgt'),daily_loss_pct:n('#b_dl'),max_drawdown_pct:n('#b_dd'),risk_scalp_pct:n('#b_rs'),risk_short_pct:n('#b_rt'),
+    scalp_tp:tp,scalp_tp_auto:tp==null},e.target)};
+$('#b_acsave').onclick=e=>{const a=$('#b_acct').value;const body={account:a};
+  if(a!=='paper'){const t=prompt('LIVE trading uses real money and can lose it. The bot follows strict limits but no bot can guarantee profit.\n\nType  I UNDERSTAND THE RISK  to continue:');
+    if(!t)return;body.confirm_live=t}botDo(body,e.target)};
+$('#b_reset').onclick=e=>{if(confirm('Reset the bot paper account to the starting balance? Its open paper positions are cleared.'))
+  botDo({action:'reset',paper_start_balance:+$('#b_pbal').value||null},e.target)};
+$('#bsyms').onclick=e=>{const x=e.target.dataset?.x;if(!x)return;botDo({symbols:botSyms.filter(s=>s!==x)})};
+$('#baddsym').onclick=()=>{const v=prompt('Market to add (e.g. V75, Boom 1000, XAUUSD, EURUSD, BTCUSD):');if(v)botDo({symbols:[...botSyms,v]})};
+
 
 // ---------------- chat (shared by every device)
 let lastId=0,pending=[],busy=false,greeted=false;
