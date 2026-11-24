@@ -66,6 +66,8 @@ def consider(scan_result: dict) -> dict | None:
         return None
     if not r["is_signal"] or r["direction"] != scan_result["direction"]:
         log.info("deep analysis did not confirm %s %s", scan_result["symbol"], scan_result["timeframe"])
+        from . import trade_alerts
+        trade_alerts.deep_disagrees(scan_result)
         return None
     title, body = message(r)
     now = time.time()
@@ -73,7 +75,7 @@ def consider(scan_result: dict) -> dict | None:
                                "timeframe": r["timeframe"], "order_type": r["plan"]["order_type"],
                                "title": title, "body": body})
     db.insert("chat", {"session": "default", "created_at": now, "role": "assistant", "content": body})
-    _push("📡 " + title, r, "Deep-confirmed")
+    _push("📡 Deep check confirms: " + title, r, "Deep-confirmed")
     return {"id": aid, "title": title, "body": body}
 
 

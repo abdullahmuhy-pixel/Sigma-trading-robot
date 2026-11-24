@@ -44,12 +44,16 @@ def open_trade(res: dict, source: str = "live", entry_price: float | None = None
         inst = resolve(res["symbol"])
         if res.get("source") == "chat" or account.trades_class(inst.asset_class):
             demo = {"demo": 1, **account.size_trade(inst.quote, risk)}
-    return db.insert("trades", {**demo,
+    tid = db.insert("trades", {**demo,
         "analysis_id": res["analysis_id"], "symbol": res["symbol"], "timeframe": res["timeframe"],
         "source": source, "direction": d, "entry": entry, "sl": sl, "tp": tp,
         "opened_at": opened, "expires_at": (fill_by or opened) + config.MAX_HOLD_BARS * secs,
         "status": status, "setup_key": res["setup_key"], "order_type": pl["order_type"], "fill_by": fill_by,
     })
+    if tid and demo and res.get("source") != "chat":
+        from . import trade_alerts
+        trade_alerts.run(trade_alerts.opened, tid, res)
+    return tid
 
 
 def fill_index(direction: int, kind: str, entry: float, bars: pd.DataFrame) -> tuple[int, float] | None:
@@ -176,8 +180,18 @@ def activate_pending() -> None:
             if t.get("origin") != "user":  # robot orders keep their planned risk; your own SL/TP stay exactly as you set them
                 upd.update(sl=px - t["direction"] * risk, tp=px + t["direction"] * config.REWARD_R * risk)
             db.update("trades", t["id"], upd)
+            _alert("filled", {**t, **upd})
         elif now >= deadline:
-            db.update("trades", t["id"], missed_or_cancelled(t, bars, now))
+            upd = missed_or_cancelled(t, bars, now)
+            db.update("trades", t["id"], upd)
+            _alert("closed", {**t, **upd})
+
+
+def _alert(kind: str, t: dict) -> None:
+    if not t.get("demo"):
+        return
+    from . import trade_alerts
+    trade_alerts.run(getattr(trade_alerts, kind), t)
 
 
 def missed_or_cancelled(t: dict, bars: pd.DataFrame, now: float) -> dict:
@@ -208,6 +222,8 @@ def monitor_once() -> list[dict]:
     for t in open_trades:
         groups[(t["symbol"], _resolution_tf(t["timeframe"], now - t["opened_at"]))].append(t)
     closed = []
+    still_open: list[dict] = []
+    bars_by_trade: dict = {}
     for (sym, rtf), trades in groups.items():
         oldest = min(t["opened_at"] for t in trades)
         need = int((now - oldest) / tf_seconds(rtf)) + 3
@@ -230,6 +246,16 @@ def monitor_once() -> list[dict]:
             if out:
                 db.update("trades", t["id"], out)
                 closed.append({**t, **out})
+                _alert("closed", {**t, **out})
+            elif t.get("demo"):
+                still_open.append(t)
+                bars_by_trade[t["id"]] = sub
+    if still_open:
+        try:
+            from . import trade_alerts
+            trade_alerts.check_breakeven(still_open, bars_by_trade)
+        except Exception as e:
+            log.debug("breakeven alerts: %s", e)
     if closed:
         learning.refit_and_save()
         _write_lessons(closed)

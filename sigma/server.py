@@ -557,6 +557,33 @@ def trades_report(days: int | None = None):
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
+@app.get("/api/trade-alerts")
+def trade_alerts_get():
+    from . import trade_alerts
+    return {"settings": trade_alerts.settings(), "real_account": trade_alerts.real_account()}
+
+
+class TradeAlertsIn(BaseModel):
+    enabled: bool | None = None
+    opened: bool | None = None
+    filled: bool | None = None
+    breakeven: bool | None = None
+    closed: bool | None = None
+    real_balance: float | None = None
+    currency: str | None = None
+    risk_pct: float | None = None
+
+
+@app.post("/api/trade-alerts")
+def trade_alerts_set(body: TradeAlertsIn):
+    from . import trade_alerts
+    try:
+        trade_alerts.update_settings(**body.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return trade_alerts_get()
+
+
 @app.get("/api/copy")
 def copy_status():
     from . import copytrade

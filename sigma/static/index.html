@@ -190,6 +190,17 @@ a.btn{display:inline-block;padding:8px 14px;border-radius:8px;background:var(--a
         don't go on the demo account. Anything you ask Sigma to analyse in the chat always does.</p>
       <p class="muted">The demo account trades every robot signal and every instrument you analyse. Each trade risks the set % of the current balance.</p>
     </div>
+    <div class="box" id="tabox"><h4>Trade alerts - take the robot's trades yourself</h4>
+      <p class="muted">When the background scan takes a trade on the demo account you get a notification with the entry,
+        stop, targets and the lot size for your real account - and again when it fills, reaches +1R (move your stop to
+        entry), and closes.</p>
+      <div class="chips" id="ta_on"></div>
+      <div class="form">
+        <label>Real account balance<input id="ta_bal" type="number" min="1" step="any" style="width:120px" placeholder="e.g. 500"></label>
+        <label>Currency<input id="ta_cur" maxlength="3" style="width:70px" placeholder="USD"></label>
+        <label>Risk per trade %<input id="ta_risk" type="number" min="0.1" max="5" step="0.1" style="width:80px" placeholder="1"></label>
+        <button id="ta_save" class="ghost">Save</button></div>
+      <p class="muted" id="ta_note"></p></div>
     <div class="box" id="copybox"><h4>Copy these trades to a real account <span id="cstate" class="state stop">off</span></h4>
       <p class="muted">Every trade the demo account opens is copied with the same stop and target levels, sized from the
         real account's balance (the loss at the stop = your risk %). Once a copy is in profit its stop trails behind price.</p>
@@ -316,7 +327,7 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+p));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
-  if(p==='paper'){loadPaper();loadCopy()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
+  if(p==='paper'){loadPaper();loadCopy();loadTA()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
 // ---------------- demo account markets
 const MK=[['forex','Forex'],['metal','Gold & metals'],['crypto','Crypto'],['index','Stock indices'],['commodity','Oil & commodities'],['synthetic','Synthetic indices']];
@@ -325,6 +336,22 @@ function drawMk(on){mkNow=on;$('#a_mk').innerHTML=MK.map(([k,l])=>`<button class
 $('#a_mk').onclick=async e=>{const k=e.target.dataset?.mk;if(!k||!mkNow)return;const before=mkNow;
   const nxt=mkNow.includes(k)?mkNow.filter(x=>x!==k):[...mkNow,k];if(!nxt.length){toast('Keep at least one');return}
   drawMk(nxt);try{await post('/api/account',{markets:nxt});toast('Saved')}catch(err){drawMk(before);toast(esc(err.message))}};
+
+// ---------------- trade alerts
+const TA=[['enabled','Alerts on'],['opened','Trade taken / order placed'],['filled','Order filled'],['breakeven','+1R: move stop to entry'],['closed','Closed']];
+let taS=null;
+async function loadTA(){try{const r=await api('/api/trade-alerts');taS=r.settings;drawTA();
+  const ra=r.real_account;const f=(id,v)=>{if(document.activeElement!==$(id)&&!$(id).dataset.dirty)$(id).value=v??''};
+  f('#ta_bal',taS.real_balance);f('#ta_cur',taS.currency);f('#ta_risk',taS.risk_pct);
+  $('#ta_note').textContent=ra.balance?`Lot sizes use ${money(ra.balance,ra.currency)} at ${ra.risk_pct}% risk`+(taS.real_balance?'.':' (from your goal in the chat).')
+    :'Add your real balance so each alert can tell you the lot size.'}catch(e){}}
+function drawTA(){$('#ta_on').innerHTML=TA.map(([k,l])=>`<button class="tfb ${taS[k]?'on':''}" data-ta="${k}">${l}</button>`).join('')}
+$('#ta_on').onclick=async e=>{const k=e.target.dataset?.ta;if(!k||!taS)return;const v=!taS[k];taS[k]=v;drawTA();
+  try{await post('/api/trade-alerts',{[k]:v});toast('Saved')}catch(err){taS[k]=!v;drawTA();toast(esc(err.message))}};
+['#ta_bal','#ta_cur','#ta_risk'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.dirty='1'}));
+$('#ta_save').onclick=async e=>{const n=id=>$(id).value===''?null:+String($(id).value).replace(',','.');
+  try{await post('/api/trade-alerts',{real_balance:n('#ta_bal'),currency:$('#ta_cur').value.trim()||null,risk_pct:n('#ta_risk')});
+    ['#ta_bal','#ta_cur','#ta_risk'].forEach(id=>delete $(id).dataset.dirty);toast('Saved');loadTA()}catch(err){toast(esc(err.message))}};
 
 // ---------------- PDF report
 $('#rep_days').onchange=e=>{$('#rep_dl').href='/api/report/trades.pdf?days='+e.target.value};
