@@ -51,7 +51,7 @@ def resample_htf(df: pd.DataFrame, tf: str) -> pd.DataFrame | None:
 def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = None,
              fund: dict | None = None, news: dict | None = None, events: dict | None = None,
              model: learning.Model | None = None, stats: dict | None = None,
-             now: float | None = None) -> dict:
+             now: float | None = None, crowd: dict | None = None) -> dict:
     """Pure function: everything needed is passed in (used live and in backtests)."""
     inst = resolve(symbol)
     m = model or learning.model()
@@ -59,6 +59,7 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
     comps = dict(tech["components"])
     comps["fundamental"] = float((fund or {}).get("score", 0.0))
     comps["news"] = float((news or {}).get("score", 0.0))
+    comps["crowd"] = float((crowd or {}).get("score", 0.0))
     regime = tech["regime"]
 
     try:
@@ -109,7 +110,7 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
         for d, x in sides.items()}
 
     raw = sum(learning.PRIOR_BASE[k] * comps[k] for k in learning.PRIOR_BASE) / sum(learning.PRIOR_BASE.values())
-    notes = list(tech["notes"]) + list((fund or {}).get("notes", []))
+    notes = list(tech["notes"]) + list((fund or {}).get("notes", [])) + list((crowd or {}).get("notes", []))
     res = {
         "symbol": inst.name, "display": inst.display, "asset_class": inst.asset_class, "timeframe": tf,
         "bar_time": df.index[-1].timestamp(), "created_at": now or time.time(),
@@ -119,7 +120,7 @@ def evaluate(symbol: str, tf: str, df: pd.DataFrame, htf: pd.DataFrame | None = 
         "entry": entry, "sl": sl, "tp": tp, "reward_r": config.REWARD_R,
         "is_signal": bool(is_signal), "blocked_reason": blocked, "setup_key": setup_key,
         "components": comps, "context": tech["context"], "notes": notes,
-        "fundamental": fund, "news": news, "events": events,
+        "fundamental": fund, "news": news, "events": events, "crowd": crowd,
         "provider": df.attrs.get("provider"), "plan": order, "both_sides": both,
         "take_profits": order["take_profits"], "_sides": sides,
     }
@@ -152,7 +153,7 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
     except Exception as e:
         log.warning("news failed: %s", e)
     events = sentiment.event_risk(inst)
-    res = evaluate(inst.name, tf, df, htf, fund, news, events)
+    res = evaluate(inst.name, tf, df, htf, fund, news, events, crowd=crowd_for(inst.name))
     res["source"] = source
     try:
         apply_live(res, market.last_price(inst.name))
@@ -177,6 +178,15 @@ def analyze(symbol: str, tf: str = "H1", source: str = "chat", journal: bool = T
             from . import paper
             res["trade_id"] = paper.open_trade(res, source="live", entry_price=_live_entry(inst, res))
     return res
+
+
+def crowd_for(name: str) -> dict | None:
+    try:
+        from .data import positioning
+        return positioning.analyze(name)
+    except Exception as e:
+        log.debug("crowd positioning: %s", e)
+        return None
 
 
 def _hours(name: str) -> dict:

@@ -23,12 +23,12 @@ import numpy as np
 from . import config, db
 
 BASE = ["trend", "htf_trend", "momentum", "structure", "mean_reversion",
-        "levels", "pattern", "divergence", "fundamental", "news"]
+        "levels", "pattern", "divergence", "fundamental", "news", "crowd"]
 FEATURES = BASE + [f"{b}@trending" for b in BASE] + [f"{b}@ranging" for b in BASE]
 
 PRIOR_BASE = {"trend": 0.6, "htf_trend": 0.6, "momentum": 0.4, "structure": 0.5,
               "mean_reversion": 0.3, "levels": 0.4, "pattern": 0.2, "divergence": 0.2,
-              "fundamental": 0.4, "news": 0.25}
+              "fundamental": 0.4, "news": 0.25, "crowd": 0.3}
 PRIOR_REGIME = {"trend@trending": 0.3, "htf_trend@trending": 0.2, "mean_reversion@trending": -0.3,
                 "mean_reversion@ranging": 0.4, "levels@ranging": 0.3, "trend@ranging": -0.3,
                 "divergence@ranging": 0.2}
@@ -113,9 +113,17 @@ class Model:
 
     @classmethod
     def from_json(cls, js: dict | None) -> "Model":
-        if not js or js.get("features") != FEATURES:
+        if not js:
             return cls()
-        return cls(js["theta"], js["bias"], js["meta"])
+        old = js.get("features")
+        if old == FEATURES:
+            return cls(js["theta"], js["bias"], js["meta"])
+        if old and len(old) == len(js.get("theta", [])):
+            # new factors were added: keep every learned weight, new ones start at their prior
+            learned = dict(zip(old, js["theta"]))
+            th = [learned.get(f, p) for f, p in zip(FEATURES, prior_theta())]
+            return cls(th, js["bias"], js["meta"])
+        return cls()
 
 
 _model: Model | None = None

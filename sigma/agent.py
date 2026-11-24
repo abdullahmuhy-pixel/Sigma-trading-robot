@@ -107,6 +107,10 @@ TOOLS = [
     {"name": "economic_calendar", "description": "This week's economic events, optionally for some currencies.",
      "input_schema": {"type": "object", "properties": {"currencies": {"type": "array", "items": {"type": "string"}},
                                                        "impact": {"type": "string", "enum": ["High", "Medium", "Low", "any"]}}}},
+    {"name": "crowd_positioning", "description": "Where retail traders are positioned in an instrument "
+     "(Myfxbook community outlook and IG client sentiment): % long/short, average crowd entry prices, and the "
+     "contrarian reading. Works for forex, metals and IG markets; empty if no source is connected.",
+     "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "market_hours", "description": "Official Deriv trading hours for an instrument: open now or not, "
      "minutes until it closes or opens, and any special events today (early closes, holidays).",
      "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}},
@@ -291,6 +295,11 @@ def run_tool(name: str, args: dict) -> object:
         imp = args.get("impact", "any")
         return [{**e, "time": _local(e["time"])} for e in news.calendar()
                 if (not ccys or e["currency"] in ccys) and (imp in (None, "any") or e["impact"] == imp)][:60]
+    if name == "crowd_positioning":
+        from .data import positioning
+        out = positioning.analyze(args["symbol"])
+        out["connected"] = positioning.configured()
+        return out
     if name == "market_hours":
         from .data.deriv_info import market_hours
         return market_hours(args["symbol"])

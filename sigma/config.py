@@ -55,6 +55,12 @@ FRED_API_KEY = _get("FRED_API_KEY")
 FINNHUB_API_KEY = _get("FINNHUB_API_KEY")
 ALPHAVANTAGE_API_KEY = _get("ALPHAVANTAGE_API_KEY")
 DERIV_APP_ID = _get("DERIV_APP_ID", "1089")  # 1089 = Deriv's public test id
+MYFXBOOK_EMAIL = _get("MYFXBOOK_EMAIL")       # crowd positioning (free Myfxbook account)
+MYFXBOOK_PASSWORD = _get("MYFXBOOK_PASSWORD")
+IG_API_KEY = _get("IG_API_KEY")               # IG client sentiment (read only - Sigma never trades on IG)
+IG_USERNAME = _get("IG_USERNAME")
+IG_PASSWORD = _get("IG_PASSWORD")
+IG_ACCOUNT_TYPE = (_get("IG_ACCOUNT_TYPE", "live") or "live").lower()
 DERIV_API_TOKEN = _get("DERIV_API_TOKEN")     # auto bot live trading on Deriv (token with 'trade' scope)
 DERIV_ACCOUNT_ID = _get("DERIV_ACCOUNT_ID")   # optional: Deriv new-API options account id
 DERIV_MIN_STAKE = float(_get("DERIV_MIN_STAKE", "1") or 1)

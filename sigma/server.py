@@ -551,5 +551,7 @@ def status():
             "open_trades": len(paper.open_positions()),
             "keys": {"anthropic": bool(config.ANTHROPIC_API_KEY), "twelvedata": bool(config.TWELVEDATA_API_KEY),
                      "fred": bool(config.FRED_API_KEY), "finnhub": bool(config.FINNHUB_API_KEY),
-                     "alphavantage": bool(config.ALPHAVANTAGE_API_KEY)},
+                     "alphavantage": bool(config.ALPHAVANTAGE_API_KEY),
+                     "myfxbook": bool(config.MYFXBOOK_EMAIL and config.MYFXBOOK_PASSWORD),
+                     "ig_sentiment": bool(config.IG_API_KEY and config.IG_USERNAME and config.IG_PASSWORD)},
             "model": learning.model().meta}

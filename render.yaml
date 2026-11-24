@@ -21,6 +21,18 @@ services:
         sync: false
       - key: ALPHAVANTAGE_API_KEY
         sync: false
+      - key: MYFXBOOK_EMAIL       # crowd positioning (free Myfxbook account)
+        sync: false
+      - key: MYFXBOOK_PASSWORD
+        sync: false
+      - key: IG_API_KEY           # IG client sentiment, read only
+        sync: false
+      - key: IG_USERNAME
+        sync: false
+      - key: IG_PASSWORD
+        sync: false
+      - key: IG_ACCOUNT_TYPE      # live or demo (matches the login above)
+        value: live
       - key: DERIV_API_TOKEN      # auto bot live trading (Trade scope). Use a DEMO account token first.
         sync: false
       - key: DISPLAY_TZ

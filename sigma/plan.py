@@ -22,7 +22,8 @@ PENDING_BARS = 6   # a pending order that has not filled after this many candles
 
 LABELS = {"trend": "Trend", "htf_trend": "Higher-timeframe trend", "momentum": "Momentum",
           "structure": "Market structure", "mean_reversion": "Overbought/oversold", "levels": "Support/resistance room",
-          "pattern": "Candle pattern", "divergence": "RSI divergence", "fundamental": "Fundamentals", "news": "News"}
+          "pattern": "Candle pattern", "divergence": "RSI divergence", "fundamental": "Fundamentals", "news": "News",
+          "crowd": "Crowd positioning"}
 
 
 def _fmt(x):
@@ -214,6 +215,9 @@ def _component_text(k: str, v: float, ctx: dict, tf: str) -> str:
         return "macro data " + ("favours" if v > 0.1 else "weighs on" if v < -0.1 else "is neutral for") + " the instrument"
     if k == "news":
         return "recent headlines are " + ("positive" if v > 0.1 else "negative" if v < -0.1 else "mixed")
+    if k == "crowd":
+        return ("most retail traders are short - contrarian bullish" if v > 0.1 else
+                "most retail traders are long - contrarian bearish" if v < -0.1 else "retail traders are evenly split")
     return ""
 
 

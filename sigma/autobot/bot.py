@@ -288,7 +288,7 @@ def manage(broker, s: dict, close_all_reason: str | None = None) -> float:
 def _scalp_setup(sym: str, risk: dict) -> dict | None:
     df1 = market.closed_candles(sym, "M1", 400)
     df5 = market.closed_candles(sym, "M5", 300)
-    r = engine.evaluate(sym, "M1", df1, df5)
+    r = engine.evaluate(sym, "M1", df1, df5, crowd=engine.crowd_for(sym))
     if engine.market_closed(r["bar_time"], "M1"):
         return None
     d = r["direction"]

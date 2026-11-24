@@ -111,6 +111,17 @@ as environment variables. Put it behind a password (most hosts offer basic auth)
 `WATCHLIST`, `SCAN_TIMEFRAMES` (default M15,H1,H4), `MIN_PROBABILITY` (0.45), `MIN_EXPECTANCY_R` (0.10 R after costs),
 `REWARD_R` (take profit = 2 × risk), `SL_ATR_MULT` (1.5), `MAX_HOLD_BARS` (30), `NEWS_BLACKOUT_MIN` (30), `DISPLAY_TZ` (Africa/Johannesburg).
 
+## Crowd positioning (optional, free)
+
+Sigma can read where retail traders are positioned and use it as a contrarian factor (crowd mostly
+long → leans bearish), weighted by what its own results show it is worth.
+
+- **Myfxbook Community Outlook** - free account at myfxbook.com; set `MYFXBOOK_EMAIL` and `MYFXBOOK_PASSWORD`.
+- **IG Client Sentiment** - API key from My IG → Settings → API keys; set `IG_API_KEY`, `IG_USERNAME`,
+  `IG_PASSWORD` and `IG_ACCOUNT_TYPE` (`live` or `demo`, matching the login). Read only: Sigma never trades on IG.
+
+Either one is enough; with both, the readings are averaged. Synthetic indices have no crowd data.
+
 ## Auto bot (🤖 page)
 
 An automatic trader that runs on its own paper account (default) or a live Deriv account.
