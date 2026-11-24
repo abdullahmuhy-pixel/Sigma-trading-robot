@@ -65,6 +65,7 @@ def catalog(force: bool = False) -> list[dict]:
         try:
             items = [_item(r) for r in deriv_active_symbols()]
             items = [i for i in items if i["symbol"]]
+            items += computed_pairs(items)
             items.sort(key=lambda i: (i["market_label"], i["submarket"], i["name"]))
             _cache.update(t=time.time(), items=items)
             try:
@@ -80,6 +81,29 @@ def catalog(force: bool = False) -> list[dict]:
                 except Exception:
                     pass
         return _cache["items"]
+
+
+def deriv_codes() -> set[str]:
+    """Symbols Deriv's API really lists (calculated pairs excluded)."""
+    return {i["symbol"] for i in catalog() if not i.get("computed")}
+
+
+def computed_pairs(items: list[dict]) -> list[dict]:
+    """Major-currency crosses missing from Deriv's API but calculable from its USD pairs."""
+    from .market import FX_ORDER
+    have = {i["symbol"] for i in items}
+    out = []
+    for x, a in enumerate(FX_ORDER):
+        for b in FX_ORDER[x + 1:]:
+            if f"frx{a}{b}" in have or "USD" in (a, b):
+                continue
+            leg = lambda c: f"frx{c}USD" in have or f"frxUSD{c}" in have
+            if leg(a) and leg(b):
+                out.append({"symbol": f"{a}{b}", "name": f"{a}/{b} (calculated from Deriv prices)",
+                            "market": "forex", "market_label": MARKET_LABEL.get("forex", "Forex"),
+                            "submarket": "calculated", "submarket_label": "Calculated crosses",
+                            "open": True, "pip": 0.001 if b == "JPY" else 0.00001, "computed": True})
+    return out
 
 
 def find(query: str) -> dict | None:

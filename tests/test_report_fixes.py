@@ -104,8 +104,8 @@ def test_fx_metals_preset(monkeypatch):
         + [{"symbol": "R_75", "market": "synthetic_index"}, {"symbol": "frxXAUUSD", "market": "commodities"}])
     w = watchlist.preset("fx_metals")
     assert w["symbols"][:3] == ["EURUSD", "GBPUSD", "USDJPY"]
-    assert set(w["symbols"]) == {"EURUSD", "GBPUSD", "USDJPY", "AUDJPY", "NZDUSD", "EURGBP", "USDZAR", "XAUUSD", "XAGUSD"}
+    assert set(w["symbols"]) == {"EURUSD", "GBPUSD", "USDJPY", "AUDJPY", "NZDUSD", "EURGBP", "XAUUSD", "XAGUSD"}
     # without the live catalogue: Deriv's known list (AUDCAD, AUDCHF, AUDNZD have none of the four currencies)
     monkeypatch.setattr(deriv_catalog, "catalog", lambda force=False: [])
     syms = watchlist.preset("fx_metals")["symbols"]
-    assert len(syms) == 25 + 1 + 2 and "AUDCAD" not in syms and "GBPNOK" in syms
+    assert len(syms) == 25 + 2 + 2 and "AUDCAD" not in syms and "GBPNOK" in syms and "CHFJPY" in syms

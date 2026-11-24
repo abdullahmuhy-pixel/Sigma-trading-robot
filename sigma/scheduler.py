@@ -108,6 +108,14 @@ def start() -> None:
         copytrade.resume_if_running()
     except Exception as e:
         _err(f"bot resume: {e}")
+    def setup():
+        try:
+            from . import watchlist
+            if watchlist.apply_default_setup_once():
+                log.info("watchlist set to every JPY/USD/EUR/GBP pair plus gold and silver, all timeframes")
+        except Exception as e:
+            _err(f"default watchlist: {e}")
+    threading.Thread(target=setup, daemon=True, name="setup").start()
     if config.AUTO_SCAN:
         threading.Thread(target=_scanner, daemon=True, name="scanner").start()
         threading.Thread(target=_sessions, daemon=True, name="sessions").start()

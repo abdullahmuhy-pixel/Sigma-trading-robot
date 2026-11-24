@@ -167,11 +167,68 @@ def binance_candles(symbol: str, tf: str, count: int = 500, end_ms: int | None =
 
 
 # ------------------------------------------------------------- Routing -----
+FX_ORDER = ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY"]   # market convention for naming crosses
+
+
+def _deriv_has(code: str | None) -> bool | None:
+    """True/False from Deriv's live symbol list; None while that list is unavailable."""
+    if not code:
+        return False
+    try:
+        from .deriv_catalog import catalog, deriv_codes
+        codes = deriv_codes()
+        return (code in codes) if codes else None
+    except Exception:
+        return None
+
+
+def _usd_leg(ccy: str, tf: str, count: int) -> pd.DataFrame:
+    """Price of one unit of `ccy` in USD, from whichever Deriv pair exists (CCYUSD, or 1 / USDCCY)."""
+    if ccy == "USD":
+        return None
+    if _deriv_has(f"frx{ccy}USD") is not False:
+        try:
+            return deriv_candles(f"frx{ccy}USD", tf, count)
+        except Exception:
+            pass
+    df = deriv_candles(f"frxUSD{ccy}", tf, count)
+    return pd.DataFrame({"open": 1 / df["open"], "high": 1 / df["low"], "low": 1 / df["high"],
+                         "close": 1 / df["close"], "volume": df.get("volume", 0.0)}, index=df.index)
+
+
+def cross_candles(pair: str, tf: str, count: int = 500) -> pd.DataFrame:
+    """A forex pair Deriv's API doesn't list, calculated from Deriv's USD pairs (e.g. CHFJPY =
+    USDJPY / USDCHF). Opens and closes are exact; highs and lows are estimated by moving one leg to
+    its extreme while the other stays at its close (the two extremes rarely happen together)."""
+    pair = pair.upper().replace("/", "")
+    a, b = pair[:3], pair[3:6]
+    if a not in FX_ORDER or b not in FX_ORDER or a == b:
+        raise DataError(f"{pair}: can't be calculated from USD pairs")
+    la, lb = _usd_leg(a, tf, count), _usd_leg(b, tf, count)
+    if la is None:      # USD/b
+        la = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=lb.index)
+    if lb is None:      # a/USD
+        lb = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=la.index)
+    j = la.join(lb, how="inner", lsuffix="_a", rsuffix="_b")
+    if j.empty:
+        raise DataError(f"{pair}: the two Deriv legs have no common candles")
+    o, c = j["open_a"] / j["open_b"], j["close_a"] / j["close_b"]
+    hi = pd.concat([o, c, j["high_a"] / j["close_b"], j["close_a"] / j["low_b"]], axis=1).max(axis=1)
+    lo = pd.concat([o, c, j["low_a"] / j["close_b"], j["close_a"] / j["high_b"]], axis=1).min(axis=1)
+    out = pd.DataFrame({"open": o, "high": hi, "low": lo, "close": c, "volume": 0.0}, index=j.index)
+    return out.iloc[-count:]
+
+
 def _routes(inst: Instrument):
     c = inst.asset_class
     if c in ("synthetic", "basket", "commodity"):
         return [("deriv", inst.deriv)]
-    if c in ("forex", "metal"):
+    if c == "forex":
+        listed = _deriv_has(inst.deriv)
+        routes = [] if listed is False else [("deriv", inst.deriv)]
+        # pairs Deriv's API lacks (CHFJPY, CADJPY...) are calculated free from its USD pairs
+        return routes + [("cross", inst.name), ("twelvedata", inst.twelvedata)]
+    if c == "metal":
         return [("deriv", inst.deriv), ("twelvedata", inst.twelvedata)]
     if c == "crypto":
         # Deriv first so prices match what you trade on Deriv; Binance as backup
@@ -181,7 +238,8 @@ def _routes(inst: Instrument):
     return [("twelvedata", inst.twelvedata)]
 
 
-_FETCH = {"deriv": deriv_candles, "twelvedata": twelvedata_candles, "binance": binance_candles}
+_FETCH = {"deriv": deriv_candles, "twelvedata": twelvedata_candles, "binance": binance_candles,
+          "cross": cross_candles}
 
 
 def candles(name: str, tf: str, count: int = 500) -> pd.DataFrame:

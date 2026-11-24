@@ -18,20 +18,37 @@ DERIV_FX_FALLBACK = ["AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD", "AUDUSD", "EURAUD",
                      "USDSEK"]
 
 
-def currency_pairs(currencies=("JPY", "USD", "EUR", "GBP"), extra=("USDZAR",)) -> list[str]:
+def currency_pairs(currencies=("JPY", "USD", "EUR", "GBP"), extra=()) -> list[str]:
     """Every forex pair Deriv offers that contains one of `currencies` (from the live catalogue)."""
     pairs = []
     try:
         from .data.deriv_catalog import catalog
-        pairs = [i["symbol"][3:] for i in catalog()
+        items = catalog()
+        pairs = [i["symbol"][3:] for i in items
                  if i.get("market") == "forex" and str(i.get("symbol", "")).startswith("frx") and len(i["symbol"]) == 9]
+        pairs += [i["symbol"] for i in items if i.get("computed")]   # e.g. CHFJPY, CADJPY
     except Exception:
         pairs = []
-    pairs = pairs or list(DERIV_FX_FALLBACK)
+    pairs = pairs or list(DERIV_FX_FALLBACK) + ["CADJPY", "CHFJPY"]
     pairs += [e for e in extra if e not in pairs]
     want = [p for p in pairs if p[:3] in currencies or p[3:] in currencies]
     major = ["EURUSD", "GBPUSD", "USDJPY"]          # the most liquid first, then alphabetical
     return [p for p in major if p in want] + sorted(p for p in want if p not in major)
+
+
+ALL_TIMEFRAMES = ["M5", "M15", "M30", "H1", "H4", "D1"]
+
+
+def apply_default_setup_once() -> bool:
+    """One-time setup (24 Nov 2026, at the user's request): every JPY, USD, EUR and GBP pair plus gold
+    and silver, with every timeframe ticked. Runs once; later edits in the app are kept."""
+    if db.kv_get("setup_fx_metals_v1"):
+        return False
+    preset("fx_metals")
+    set_timeframes(ALL_TIMEFRAMES)
+    set_enabled(True)
+    db.kv_set("setup_fx_metals_v1", {"at": __import__("time").time()})
+    return True
 
 
 def preset(name: str) -> dict:
