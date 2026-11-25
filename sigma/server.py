@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import hmac
 import logging
 import threading
@@ -175,10 +176,31 @@ def analyze(symbol: str, timeframe: str = "H1", deep: bool = True):
         if deep:
             from . import deep as deep_mod
             r = deep_mod.analyze(symbol, timeframe, source="chat")
-            return {**agent.compact(r), "deep": r["deep"]}
-        return agent.compact(engine.analyze(symbol, timeframe, source="chat"))
+            return agent.save_result({**agent.compact(r), "deep": r["deep"]}, symbol, "chart")
+        return agent.save_result(agent.compact(engine.analyze(symbol, timeframe, source="chat")), symbol, "chart")
     except Exception as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/saved")
+def saved_list(hours: float = 24):
+    """Analyses you ran recently, newest first, with what happened to their paper trade."""
+    rows = db.q("SELECT s.id, s.created_at, s.symbol, s.code, s.timeframe, s.direction, s.order_type, s.is_signal, "
+                "s.probability, s.entry, s.via, s.trade_id, t.status trade_status, t.r_multiple "
+                "FROM saved_analyses s LEFT JOIN trades t ON t.id=s.trade_id "
+                "WHERE s.created_at >= ? ORDER BY s.created_at DESC LIMIT 100",
+                (time.time() - min(max(hours, 1), 168) * 3600,))
+    return {"items": rows}
+
+
+@app.get("/api/saved/{sid}")
+def saved_get(sid: int):
+    r = db.q1("SELECT * FROM saved_analyses WHERE id=?", (sid,))
+    if not r:
+        raise HTTPException(404, "That analysis is older than 7 days or was removed.")
+    out = json.loads(r["payload"])
+    t = db.q1("SELECT status, r_multiple, exit_price FROM trades WHERE id=?", (r["trade_id"],)) if r["trade_id"] else None
+    return {**out, "saved_id": r["id"], "saved_at": r["created_at"], "code": r["code"], "trade_now": t}
 
 
 @app.get("/api/symbols")

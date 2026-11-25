@@ -60,6 +60,10 @@ textarea{flex:1;resize:none;height:62px;background:var(--panel2);color:var(--tex
 .thumb span{position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;text-align:center;cursor:pointer;line-height:18px}
 .bar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 #chart{height:min(56vh,520px);border-bottom:1px solid var(--line);overflow:hidden}
+#recentbar{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);overflow:hidden}
+#recent{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding-bottom:2px}
+.rc{flex:0 0 auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap;color:var(--fg)}
+.rc.sel{border-color:var(--accent)}.rc b.l{color:var(--up)}.rc b.s{color:var(--down)}.rc .t{color:var(--dim)}
 #symbtn{min-width:170px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 #status{color:var(--dim);font-size:13px}
 .big{font-size:20px;font-weight:700}
@@ -167,6 +171,7 @@ a.btn{display:inline-block;padding:8px 14px;border-radius:8px;background:var(--a
       <span id="livebadge" class="pill off">● connecting…</span>
       <span id="status"></span>
     </div>
+    <div id="recentbar"><span class="muted" style="white-space:nowrap">🕘 Last 24 h:</span><div id="recent"></div></div>
     <div id="chart"></div>
     <div class="wrap" id="card"><p class="muted">Pick an instrument and press <b>Deep analysis</b>. It takes about 1-2 minutes: Sigma checks
       four timeframes, replays this market's history to find look-alike setups, reads fundamentals and news, then plans the order.
@@ -327,7 +332,7 @@ function show(){const p=PAGES.includes(location.hash.slice(1))?location.hash.sli
   document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='page-'+p));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
   if(p==='chart')requestAnimationFrame(()=>{fit();if(!chartLoaded)loadChart();else if(!live)startLive($('#sym').value,$('#tf').value,chartReq)});else stopLive();
-  if(p==='paper'){loadPaper();loadCopy();loadTA()}if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
+  if(p==='paper'){loadPaper();loadCopy();loadTA()}if(p==='chart')loadRecent();if(p==='markets')loadMarkets();if(p==='bot')loadBot();if(p==='chat')$('#msgs').scrollTop=1e9}
 window.addEventListener('hashchange',show);
 // ---------------- demo account markets
 const MK=[['forex','Forex'],['metal','Gold & metals'],['crypto','Crypto'],['index','Stock indices'],['commodity','Oil & commodities'],['synthetic','Synthetic indices']];
@@ -554,8 +559,27 @@ $('#tf').onchange=loadChart;
 $('#analyze').onclick=async()=>{const b=$('#analyze');b.disabled=true;const t0=Date.now();
   const tick=setInterval(()=>$('#status').textContent=`deep analysis… ${Math.round((Date.now()-t0)/1000)} s (about 1-2 minutes)`,1000);
   try{const a=await api(`/api/analyze?symbol=${encodeURIComponent($('#sym').value)}&timeframe=${$('#tf').value}&deep=true`);clearInterval(tick);showCard(a);drawLevels(a);
-    $('#status').textContent='done in '+Math.round((Date.now()-t0)/1000)+' s'+(a.paper_trade_id?' · paper-traded on the demo account':'')}
+    $('#status').textContent='done in '+Math.round((Date.now()-t0)/1000)+' s'+(a.paper_trade_id?' · paper-traded on the demo account':'');
+    curSaved=a.saved_id;loadRecent()}
   catch(e){clearInterval(tick);$('#status').textContent='analysis failed: '+e.message}finally{b.disabled=false}};
+// ---------------- recent analyses: reopen any signal from the last 24 hours
+let curSaved=null;
+const TSTAT={open:'● open',pending:'⏳ order',won:'🎯 won',lost:'❌ lost',breakeven:'⚖️ BE',expired:'⌛ expired',missed:'↗ missed',cancelled:'🚫 cancelled'};
+async function loadRecent(){let r;try{r=await api('/api/saved?hours=24')}catch(e){return}
+  const it=r.items||[];
+  $('#recent').innerHTML=it.length?it.map(x=>{const t=new Date(x.created_at*1000);const hm=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const st=x.trade_status?` · ${TSTAT[x.trade_status]||x.trade_status}${x.r_multiple!=null&&!['open','pending'].includes(x.trade_status)?' '+(x.r_multiple>0?'+':'')+x.r_multiple.toFixed(1)+'R':''}`:'';
+    return `<span class="rc ${x.id===curSaved?'sel':''}" data-id="${x.id}"><span class="t">${hm}</span> <b class="${x.direction==='LONG'?'l':'s'}">${esc(x.order_type||'')}</b> ${esc(x.symbol)} ${x.timeframe}${x.is_signal?' ✓':''}${st}</span>`}).join('')
+    :'<span class="muted">Your analyses will appear here so you can reopen them.</span>'}
+$('#recent').onclick=e=>{const c=e.target.closest('.rc');if(c)openSaved(+c.dataset.id)};
+async function openSaved(id){$('#status').textContent='opening…';
+  try{const a=await api('/api/saved/'+id);curSaved=id;loadRecent();
+    const code=a.code||a.symbol;$('#sym').value=code;const i=(typeof SYMS!=='undefined'?SYMS:[]).find(x=>x.symbol===code);
+    $('#symname').textContent=i?i.name:a.symbol;$('#tf').value=a.timeframe;await loadChart();showCard(a);drawLevels(a);
+    const tn=a.trade_now;$('#status').textContent=`analysed ${fmtT(a.saved_at)}`+(tn?` · paper trade: ${TSTAT[tn.status]||tn.status}${tn.r_multiple!=null?' '+(tn.r_multiple>0?'+':'')+tn.r_multiple.toFixed(2)+'R':''}`:'');
+    window.scrollTo({top:0,behavior:'smooth'})}
+  catch(e){$('#status').textContent=e.message}}
+
 function showCard(a){const ex=a.explanation||{},d=a.deep||{},buy=a.direction==='LONG',look=(d.lookalike_history||{});
   const rr=a.stop_loss&&a.entry?Math.abs(a.take_profit-a.entry)/Math.abs(a.entry-a.stop_loss):null;
   $('#card').innerHTML=`

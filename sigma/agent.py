@@ -266,12 +266,28 @@ def compact(res: dict) -> dict:
     }
 
 
+def save_result(out: dict, code: str | None, via: str) -> dict:
+    """Keeps the full result of an analysis you asked for, so it can be reopened later (7 days)."""
+    try:
+        out = json.loads(json.dumps(out, default=str))
+        sid = db.insert("saved_analyses", {
+            "created_at": time.time(), "symbol": out.get("symbol"), "code": code or out.get("symbol"),
+            "timeframe": out.get("timeframe"), "direction": out.get("direction"), "order_type": out.get("order_type"),
+            "is_signal": 1 if out.get("is_signal") else 0, "probability": out.get("probability"),
+            "entry": out.get("entry"), "analysis_id": out.get("journal_id"), "trade_id": out.get("paper_trade_id"),
+            "via": via, "payload": json.dumps(out)})
+        out["saved_id"] = sid
+    except Exception as e:
+        log.warning("could not save analysis: %s", e)
+    return out
+
+
 def run_tool(name: str, args: dict) -> object:
     if name == "deep_analysis":
         r = deep.analyze(args["symbol"], args["timeframe"], source="chat")
-        return {**compact(r), "deep": r["deep"]}
+        return save_result({**compact(r), "deep": r["deep"]}, args["symbol"], "chat")
     if name == "analyze_market":
-        return compact(engine.analyze(args["symbol"], args["timeframe"], source="chat"))
+        return save_result(compact(engine.analyze(args["symbol"], args["timeframe"], source="chat")), args["symbol"], "chat")
     if name == "multi_timeframe":
         out = {}
         for tf in ("M15", "H1", "H4", "D1"):

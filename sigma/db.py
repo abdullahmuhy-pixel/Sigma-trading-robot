@@ -131,6 +131,19 @@ CREATE TABLE IF NOT EXISTS copy_trades (
 CREATE INDEX IF NOT EXISTS ix_copy_status ON copy_trades(status, account);
 CREATE INDEX IF NOT EXISTS ix_copy_trade ON copy_trades(trade_id);
 
+CREATE TABLE IF NOT EXISTS saved_analyses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at REAL NOT NULL,
+    symbol TEXT NOT NULL,           -- display name, e.g. EUR/JPY
+    code TEXT,                      -- what the chart uses, e.g. frxEURJPY
+    timeframe TEXT NOT NULL,
+    direction TEXT, order_type TEXT, is_signal INTEGER, probability REAL, entry REAL,
+    analysis_id INTEGER, trade_id INTEGER,
+    via TEXT,                       -- chart | chat
+    payload TEXT NOT NULL           -- the full result, to reopen it exactly as it was shown
+);
+CREATE INDEX IF NOT EXISTS ix_saved_time ON saved_analyses(created_at);
+
 CREATE TABLE IF NOT EXISTS push_subs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint TEXT NOT NULL UNIQUE,  -- one row per device/browser that allowed notifications
@@ -351,6 +364,7 @@ def prune(shadow_days: int | None = None, chat_days: int = 120, alert_days: int 
     execute(f"DELETE FROM analyses WHERE id IN ({old}) AND id NOT IN (SELECT analysis_id FROM trades WHERE analysis_id IS NOT NULL)", (cut,))
     execute("DELETE FROM chat WHERE created_at < ?", (time.time() - chat_days * 86400,))
     execute("DELETE FROM alerts WHERE created_at < ?", (time.time() - alert_days * 86400,))
+    execute("DELETE FROM saved_analyses WHERE created_at < ?", (time.time() - 7 * 86400,))
     size = size_mb()
     if size is not None and size > config.MAX_DB_MB and days > 3:   # still too big: prune harder
         return prune(max(3, days // 2), chat_days, alert_days)
